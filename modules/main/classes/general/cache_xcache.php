@@ -15,35 +15,34 @@ class CPHPCacheXCache implements ICacheBackend
 
 	public function __construct()
 	{
-		$this->CPHPCacheXCache();
-	}
-
-	public function CPHPCacheXCache()
-	{
 		if(defined("BX_CACHE_SID"))
 			$this->sid = BX_CACHE_SID;
 		else
 			$this->sid = "BX";
 	}
 
-	public static function IsAvailable()
+	function IsAvailable()
 	{
 		return function_exists('xcache_get');
 	}
 
-	public function clean($basedir, $initdir = false, $filename = false)
+	function clean($basedir, $initdir = false, $filename = false)
 	{
-		if(strlen($filename))
+		if($filename <> '')
 		{
 			$basedir_version = xcache_get($this->sid.$basedir);
 			if($basedir_version === null)
+			{
 				return true;
+			}
 
 			if($initdir !== false)
 			{
 				$initdir_version = xcache_get($basedir_version."|".$initdir);
 				if($initdir_version === null)
+				{
 					return true;
+				}
 			}
 			else
 			{
@@ -54,11 +53,13 @@ class CPHPCacheXCache implements ICacheBackend
 		}
 		else
 		{
-			if(strlen($initdir))
+			if($initdir <> '')
 			{
 				$basedir_version = xcache_get($this->sid.$basedir);
 				if($basedir_version === null)
+				{
 					return true;
+				}
 
 				xcache_unset($basedir_version."|".$initdir);
 			}
@@ -70,7 +71,7 @@ class CPHPCacheXCache implements ICacheBackend
 		return true;
 	}
 
-	public function read(&$arAllVars, $basedir, $initdir, $filename, $TTL)
+	function read(&$arAllVars, $basedir, $initdir, $filename, $TTL)
 	{
 		$basedir_version = xcache_get($this->sid.$basedir);
 		if($basedir_version === null)
@@ -95,14 +96,14 @@ class CPHPCacheXCache implements ICacheBackend
 		}
 		else
 		{
-			$this->read = strlen($arAllVars);
+			$this->read = mb_strlen($arAllVars);
 			$arAllVars = unserialize($arAllVars);
 		}
 
 		return true;
 	}
 
-	public function write($arAllVars, $basedir, $initdir, $filename, $TTL)
+	function write($arAllVars, $basedir, $initdir, $filename, $TTL)
 	{
 		$basedir_version = xcache_get($this->sid.$basedir);
 		if($basedir_version === null)
@@ -128,12 +129,12 @@ class CPHPCacheXCache implements ICacheBackend
 		}
 
 		$arAllVars = serialize($arAllVars);
-		$this->written = strlen($arAllVars);
+		$this->written = mb_strlen($arAllVars);
 
 		xcache_set($basedir_version."|".$initdir_version."|".$filename, $arAllVars, intval($TTL));
 	}
 
-	public static function IsCacheExpired($path)
+	function IsCacheExpired($path)
 	{
 		return false;
 	}

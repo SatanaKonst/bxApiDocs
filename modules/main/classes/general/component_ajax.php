@@ -49,12 +49,12 @@ class CComponentAjax
 		{
 			if ($_GET['bitrix_disable_ajax'] == 'N')
 			{
-				unset($_SESSION['bitrix_disable_ajax']);
+				unset(\Bitrix\Main\Application::getInstance()->getSession()['bitrix_disable_ajax']);
 			}
 
-			if ($_GET['bitrix_disable_ajax'] == 'Y' || $_SESSION['bitrix_disable_ajax'] == 'Y')
+			if ($_GET['bitrix_disable_ajax'] == 'Y' || \Bitrix\Main\Application::getInstance()->getSession()['bitrix_disable_ajax'] == 'Y')
 			{
-				$_SESSION['bitrix_disable_ajax'] = 'Y';
+				\Bitrix\Main\Application::getInstance()->getSession()['bitrix_disable_ajax'] = 'Y';
 				return null;
 			}
 		}
@@ -83,7 +83,7 @@ class CComponentAjax
 			// dirty hack: try to get breadcrumb call params
 			for ($i = 0, $cnt = count($APPLICATION->buffer_content_type); $i < $cnt; $i++)
 			{
-				if ($APPLICATION->buffer_content_type[$i]['F'][1] == 'GetNavChain')
+				if (is_array($APPLICATION->buffer_content_type[$i]['F']) && $APPLICATION->buffer_content_type[$i]['F'][1] === 'GetNavChain')
 				{
 					$this->__nav_params = $APPLICATION->buffer_content_type[$i]['P'];
 				}
@@ -91,9 +91,9 @@ class CComponentAjax
 
 			$APPLICATION->RestartBuffer();
 
-			// define('PUBLIC_AJAX_MODE', 1);
+			define('PUBLIC_AJAX_MODE', 1);
 
-			if (is_set($_REQUEST, 'AJAX_CALL'))
+			if (isset($_REQUEST['AJAX_CALL']))
 			{
 				$this->bIFrameMode = true;
 			}
@@ -119,7 +119,7 @@ class CComponentAjax
 	 * @param CBitrixComponent $parent
 	 * @return bool
 	 */
-	public function _checkParent($parent)
+	function _checkParent($parent)
 	{
 		if ('Y' == $parent->arParams['AJAX_MODE'])
 			return true;
@@ -129,18 +129,18 @@ class CComponentAjax
 		return false;
 	}
 
-	public static function __BufferDelimiter()
+	function __BufferDelimiter()
 	{
 		return '';
 	}
 
-	public function __removeHandlers()
+	function __removeHandlers()
 	{
 		RemoveEventHandler('main', 'OnBeforeRestartBuffer', $this->RestartBufferHandlerId);
 		RemoveEventHandler('main', 'OnBeforeLocalRedirect', $this->LocalRedirectHandlerId);
 	}
 
-	public function RestartBufferHandler()
+	function RestartBufferHandler()
 	{
 		/** @global CMain $APPLICATION */
 		global $APPLICATION;
@@ -154,7 +154,7 @@ class CComponentAjax
 		$this->__removeHandlers();
 	}
 
-	public function LocalRedirectHandler(&$url)
+	function LocalRedirectHandler(&$url)
 	{
 		if (!$this->bAjaxSession) return;
 
@@ -184,7 +184,7 @@ class CComponentAjax
 		$this->__removeHandlers();
 	}
 
-	public function CheckSession()
+	function CheckSession()
 	{
 		if ($this->componentID = CAjax::GetComponentID($this->componentName, $this->componentTemplate, $this->arParams['AJAX_OPTION_ADDITIONAL']))
 		{
@@ -205,9 +205,9 @@ class CComponentAjax
 		return false;
 	}
 
-	public static function __GetSEFRealUrl($url)
+	function __GetSEFRealUrl($url)
 	{
-		$arResult = CUrlRewriter::GetList(array('QUERY' => $url));
+		$arResult = \Bitrix\Main\UrlRewriter::getList(SITE_ID, array('QUERY' => $url));
 
 		if (is_array($arResult) && count($arResult) > 0)
 			return $arResult[0]['PATH'];
@@ -215,7 +215,7 @@ class CComponentAjax
 			return false;
 	}
 
-	public function __isAjaxURL($url)
+	function __isAjaxURL($url)
 	{
 		/** @global CMain $APPLICATION */
 		global $APPLICATION;
@@ -223,7 +223,7 @@ class CComponentAjax
 		if(preg_match("/^(#|mailto:|javascript:|callto:)/", $url))
 			return false;
 
-		if (strpos($url, '://') !== false)
+		if (mb_strpos($url, '://') !== false)
 			return false;
 
 		$url = preg_replace('/#.*/', '', $url);
@@ -236,7 +236,7 @@ class CComponentAjax
 			$test_str = '/bitrix/urlrewrite.php?SEF_APPLICATION_CUR_PAGE_URL=';
 			if (strncmp($url, $test_str, 52) === 0)
 			{
-				$url = urldecode(substr($url, 52));
+				$url = urldecode(mb_substr($url, 52));
 			}
 
 			$url = $this->__GetSEFRealUrl($url);
@@ -246,12 +246,12 @@ class CComponentAjax
 		}
 		else
 		{
-			if (strpos($url, '?') !== false)
-				$url = substr($url, 0, strpos($url, '?'));
+			if (mb_strpos($url, '?') !== false)
+				$url = mb_substr($url, 0, mb_strpos($url, '?'));
 
-			if (substr($url, -4) != '.php')
+			if (mb_substr($url, -4) != '.php')
 			{
-				if (substr($url, -1) != '/')
+				if (mb_substr($url, -1) != '/')
 					$url .= '/';
 
 				$url .= 'index.php';
@@ -265,12 +265,12 @@ class CComponentAjax
 			if ($this->arParams['SEF_MODE'] == 'Y')
 				$currentUrl = $this->__getSEFRealUrl($currentUrl);
 
-			if (strpos($currentUrl, '?') !== false)
-				$currentUrl = substr($currentUrl, 0, strpos($currentUrl, '?'));
+			if (mb_strpos($currentUrl, '?') !== false)
+				$currentUrl = mb_substr($currentUrl, 0, mb_strpos($currentUrl, '?'));
 
-			if (substr($currentUrl, -4) != '.php')
+			if (mb_substr($currentUrl, -4) != '.php')
 			{
-				if (substr($currentUrl, -1) != '/')
+				if (mb_substr($currentUrl, -1) != '/')
 					$currentUrl .= '/';
 
 				$currentUrl .= 'index.php';
@@ -298,10 +298,10 @@ class CComponentAjax
 		return false;
 	}
 
-	public static function _checkPcreLimit($data)
+	function _checkPcreLimit($data)
 	{
 		$pcre_backtrack_limit = intval(ini_get("pcre.backtrack_limit"));
-		$text_len = function_exists('mb_strlen') ? mb_strlen($data, 'latin1') : strlen($data);
+		$text_len = function_exists('mb_strlen')? mb_strlen($data, 'latin1') : mb_strlen($data);
 		$text_len++;
 
 		if ($pcre_backtrack_limit > 0 && $pcre_backtrack_limit < $text_len)
@@ -313,15 +313,20 @@ class CComponentAjax
 		return $pcre_backtrack_limit >= $text_len;
 	}
 
-	public function __PrepareLinks(&$data)
+	function __PrepareLinks(&$data)
 	{
 		$add_param = CAjax::GetSessionParam($this->componentID);
 
-		$regexp_links = '/(<a[^>]*?>.*?<\/a>)/is'.BX_UTF_PCRE_MODIFIER;
+		$regexp_links = '/(<a\s[^>]*?>.*?<\/a>)/is'.BX_UTF_PCRE_MODIFIER;
 		$regexp_params = '/([\w\-]+)\s*=\s*([\"\'])(.*?)\2/is'.BX_UTF_PCRE_MODIFIER;
 
 		$this->_checkPcreLimit($data);
 		$arData = preg_split($regexp_links, $data, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+		if (!is_array($arData))
+		{
+			return;
+		}
 
 		$cData = count($arData);
 		if($cData < 2)
@@ -338,7 +343,7 @@ class CComponentAjax
 
 		for($iData = 1; $iData < $cData; $iData += 2)
 		{
-			if(!preg_match('/^<a([^>]*?)>(.*?)<\/a>$/is'.BX_UTF_PCRE_MODIFIER, $arData[$iData], $match))
+			if(!preg_match('/^<a\s([^>]*?)>(.*?)<\/a>$/is'.BX_UTF_PCRE_MODIFIER, $arData[$iData], $match))
 				continue;
 
 			$params = $match[1];
@@ -355,7 +360,7 @@ class CComponentAjax
 				if ($value == '')
 					continue;
 
-				$param_name = strtolower($arLinkParams[1][$pkey]);
+				$param_name = mb_strtolower($arLinkParams[1][$pkey]);
 
 				if ($param_name === 'href')
 					$url_key = $pkey;
@@ -377,11 +382,11 @@ class CComponentAjax
 				{
 					$real_url = $url;
 
-					$pos = strpos($url, '#');
+					$pos = mb_strpos($url, '#');
 					if ($pos !== false)
-						$real_url = substr($real_url, 0, $pos);
+						$real_url = mb_substr($real_url, 0, $pos);
 
-					$real_url .= strpos($url, '?') === false ? '?' : '&';
+					$real_url .= mb_strpos($url, '?') === false ? '?' : '&';
 					$real_url .= $add_param;
 
 					$url_str = CAjax::GetLinkEx($real_url, $url, $match[2], 'comp_'.$this->componentID, $strAdditional);
@@ -396,56 +401,61 @@ class CComponentAjax
 			$data = implode('', $arData);
 	}
 
-	public function __PrepareForms(&$data)
+	function __PrepareForms(&$data)
 	{
 		$this->_checkPcreLimit($data);
 		$arData = preg_split('/(<form([^>]*)>)/i'.BX_UTF_PCRE_MODIFIER, $data, -1, PREG_SPLIT_DELIM_CAPTURE);
 
 		$bDataChanged = false;
-		for ($key = 0, $l = count($arData); $key < $l; $key++)
+		if (is_array($arData))
 		{
-			if ($key % 3 != 0)
+			for ($key = 0, $l = count($arData); $key < $l; $key++)
 			{
-				$arIgnoreAttributes = array('target');
-				$bIgnore = false;
-				foreach ($arIgnoreAttributes as $attr)
+				if ($key % 3 != 0)
 				{
-					if (strpos($arData[$key], $attr.'="') !== false)
+					$arIgnoreAttributes = array('target');
+					$bIgnore = false;
+					foreach ($arIgnoreAttributes as $attr)
 					{
-						$bIgnore = true;
-						break;
+						if (mb_strpos($arData[$key], $attr.'="') !== false)
+						{
+							$bIgnore = true;
+							break;
+						}
 					}
+
+					if (!$bIgnore)
+					{
+						preg_match_all('/action=(["\']{1})(.*?)\1/i', $arData[$key], $arAction);
+						$url = $arAction[2][0];
+
+						if ($url === '' || $this->__isAjaxURL($url) || $this->__isAjaxURL(urldecode($url)))
+						{
+							$arData[$key] = CAjax::GetForm($arData[$key+1], 'comp_'.$this->componentID, $this->componentID, true, $this->bShadow);
+						}
+						else
+						{
+							$new_url = str_replace(CAjax::GetSessionParam($this->componentID), '', $url);
+							$arData[$key] = str_replace($url, $new_url, $arData[$key]);
+						}
+
+						$bDataChanged = true;
+					}
+
+					unset($arData[$key+1]);
+					$key++;
 				}
 
-				if (!$bIgnore)
-				{
-					preg_match_all('/action=(["\']{1})(.*?)\1/i', $arData[$key], $arAction);
-					$url = $arAction[2][0];
-
-					if ($url === '' || $this->__isAjaxURL($url))
-					{
-						$arData[$key] = CAjax::GetForm($arData[$key+1], 'comp_'.$this->componentID, $this->componentID, true, $this->bShadow);
-					}
-					else
-					{
-						$new_url = str_replace(CAjax::GetSessionParam($this->componentID), '', $url);
-						$arData[$key] = str_replace($url, $new_url, $arData[$key]);
-					}
-
-					$bDataChanged = true;
-				}
-
-				unset($arData[$key+1]);
-				$key++;
 			}
-
 		}
 
 		if ($bDataChanged)
+		{
 			$data = implode('', $arData);
+		}
 	}
 
-	public function __prepareScripts(&$data)
+	function __prepareScripts(&$data)
 	{
 		$regexp = '/(<script(?:[^>]*)?>)(.*?)<\/script>/is'.BX_UTF_PCRE_MODIFIER;
 
@@ -460,7 +470,7 @@ class CComponentAjax
 			{
 				$data = str_replace($out[0][$i], '', $data);
 
-				if (strlen($out[1][$i]) > 0 && strpos($out[1][$i], 'src=') !== false)
+				if ($out[1][$i] <> '' && mb_strpos($out[1][$i], 'src=') !== false)
 				{
 					$regexp_src = '/src="([^"]*)?"/i';
 					if (preg_match($regexp_src, $out[1][$i], $out1) != 0)
@@ -487,11 +497,11 @@ class CComponentAjax
 		{
 			$data .= "
 <script type=\"text/javascript\">
-top.bxcompajaxframeonload = function() {
-	top.BX.CaptureEventsGet();
-	top.BX.CaptureEvents(top, 'load');
-	top.BX.evalPack(".CUtil::PhpToJsObject($arScripts).");
-	setTimeout('top.BX.ajax.__runOnload();', 300);
+parent.bxcompajaxframeonload = function() {
+    parent.BX.CaptureEventsGet();
+    parent.BX.CaptureEvents(parent, 'load');
+    parent.BX.evalPack(".CUtil::PhpToJsObject($arScripts).");
+    setTimeout('parent.BX.ajax.__runOnload();', 300);
 }</script>
 ";
 		}
@@ -514,10 +524,10 @@ top.bxcompajaxframeonload = function() {
 				for ($i = $cnt_old; $i<$cnt_new; $i++)
 				{
 					$css_path = $arCSSList[$i];
-					if(strtolower(substr($css_path, 0, 7)) != 'http://' && strtolower(substr($css_path, 0, 8)) != 'https://')
+					if(mb_strtolower(mb_substr($css_path, 0, 7)) != 'http://' && mb_strtolower(mb_substr($css_path, 0, 8)) != 'https://')
 					{
-						if(($p = strpos($css_path, "?"))>0)
-							$css_file = substr($css_path, 0, $p);
+						if(($p = mb_strpos($css_path, "?"))>0)
+							$css_file = mb_substr($css_path, 0, $p);
 						else
 							$css_file = $css_path;
 
@@ -577,7 +587,7 @@ top.bxcompajaxframeonload = function() {
 
 		$additional_data = '<script type="text/javascript" bxrunfirst="true">'."\n";
 		$additional_data .= 'var arAjaxPageData = '.CUtil::PhpToJSObject($arAdditionalData).";\r\n";
-		$additional_data .= 'top.BX.ajax.UpdatePageData(arAjaxPageData)'.";\r\n";
+		$additional_data .= 'parent.BX.ajax.UpdatePageData(arAjaxPageData)'.";\r\n";
 
 		$additional_data .= '</script><script type="text/javascript">';
 
@@ -588,15 +598,16 @@ top.bxcompajaxframeonload = function() {
 
 		if ($this->bJump)
 		{
-			if ($this->bIFrameMode)
-				$additional_data .= 'top.setTimeout(\'BX.scrollToNode("comp_'.$this->componentID.'")\', 100)'.";\r\n";
-			else
-				$additional_data .= 'top.BX.scrollToNode(\'comp_'.$this->componentID.'\')'.";\r\n";
+			$additional_data .= (
+				$this->bIFrameMode
+					? 'setTimeout(\'BX.scrollToNode("comp_' . $this->componentID . '")\', 100)' . ";\r\n"
+					: 'top.BX.scrollToNode(\'comp_' . $this->componentID . '\')' . ";\r\n"
+			);
 		}
 
 		$additional_data .= '</script>';
 
-		echo $additional_data;
+		return $additional_data;
 	}
 
 	function _PrepareData()
@@ -664,9 +675,10 @@ top.bxcompajaxframeonload = function() {
 
 		if ($this->bAjaxSession)
 		{
-			AddEventHandler('main', 'onAfterAjaxResponse', array($this, '_PrepareAdditionalData'));
+			$eventManager = \Bitrix\Main\EventManager::getInstance();
 
-			$APPLICATION->AddBufferContent(array('CComponentAjax', 'ExecuteEvents'));
+			$eventManager->addEventHandlerCompatible('main', 'onAfterAjaxResponse', array($this, '_PrepareAdditionalData'));
+			$eventManager->addEventHandlerCompatible('main', 'OnEndBufferContent', array('CComponentAjax', 'executeEvents'));
 
 			require_once($_SERVER["DOCUMENT_ROOT"].BX_ROOT."/modules/main/include/epilog_after.php");
 			exit();
@@ -674,11 +686,15 @@ top.bxcompajaxframeonload = function() {
 	}
 
 	// will be called as delay function and not in class entity context
-	function ExecuteEvents()
+	public static function executeEvents(&$content = '')
 	{
+		ob_start();
+
 		foreach (GetModuleEvents('main', 'onAfterAjaxResponse', true) as $arEvent)
 		{
 			echo ExecuteModuleEventEx($arEvent);
 		}
+
+		$content = ob_get_clean() . $content;
 	}
 }

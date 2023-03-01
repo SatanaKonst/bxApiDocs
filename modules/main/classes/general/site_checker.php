@@ -33,7 +33,7 @@ class CSiteCheckerTest
 				if (preg_match("/[\xC0-\xFF]/",$host0))
 				{
 					// utf-8;
-					if (!defined('BX_UTF') && BX_UTF !== true)
+					if (!defined('BX_UTF') || BX_UTF !== true)
 						$host = $host0;
 				}
 				elseif (preg_match("/[\xC0-\xFF]/",$host))
@@ -64,12 +64,13 @@ class CSiteCheckerTest
 			array('check_mbstring' =>GetMessage('SC_T_MBSTRING')),
 			array('check_install_scripts' => GetMessage('SC_T_INSTALL_SCRIPTS')),
 			array('check_socket' => GetMessage('SC_T_SOCK')),
+			array('check_bx_crontab' => GetMessage("MAIN_SC_AGENTS_CRON")),
 		);
 
 		$arGroupName[2] = GetMessage("MAIN_SC_BUSINESS");
 		$arGroupDesc[2] = GetMessage("MAIN_SC_CORRECT_DESC");
 		$arTestGroup[2] = array(
-			array('check_pull_stream' => GetMessage("MAIN_SC_TEST_CHAT")),
+			array('check_pull_stream' => GetMessage("MAIN_SC_TEST_PUSH_SERVER")),
 			array('check_pull_comments' => GetMessage("MAIN_SC_TEST_COMMENTS")),
 			array('check_turn' => GetMessage("MAIN_SC_TEST_VIDEO")),
 			array('check_access_mobile' => GetMessage("MAIN_SC_TEST_MOBILE")),
@@ -81,9 +82,11 @@ class CSiteCheckerTest
 			array('check_ca_file' => GetMessage("MAIN_SC_CLOUD_TEST")),
 			array('check_connect_mail' => GetMessage("MAIN_SC_TEST_MAIL_INTEGRATION")),
 			array('check_socnet' => GetMessage("MAIN_SC_TEST_SOCNET_INTEGRATION")),
+			array('check_rest' => GetMessage("MAIN_SC_TEST_REST")),
+			array('check_mail_push' => GetMessage("MAIN_SC_TEST_MAIL_PUSH")),
 		);
 		if (IsModuleInstalled('extranet'))
-			$arTestGroup[2][] = array('check_extranet' => GetMessage("MAIN_SC_EXTRANET_ACCESS")); 
+			$arTestGroup[2][] = array('check_extranet' => GetMessage("MAIN_SC_EXTRANET_ACCESS"));
 
 		$arGroupName[4] = GetMessage("MAIN_SC_WINDOWS_ENV");
 		$arGroupDesc[4] = '';
@@ -105,13 +108,11 @@ class CSiteCheckerTest
 		$arTestGroup[16] = array(
 			array('check_dbconn_settings' => GetMessage('SC_T_DBCONN_SETTINGS')),
 			array('check_dbconn' => GetMessage('SC_T_DBCONN')),
-			array('check_bx_crontab' => GetMessage("MAIN_SC_AGENTS_CRON")),
 			array('check_session_ua' => GetMessage('SC_T_SESS_UA')),
 			array('check_sites' => GetMessage('SC_T_SITES')),
 			array('check_clone' => GetMessage('SC_T_CLONE')),
 
 			array('check_pcre_recursion' => GetMessage('SC_T_RECURSION')),
-			array('check_method_exists' => GetMessage('SC_T_METHOD_EXISTS')),
 
 			array('check_upload' => GetMessage('SC_T_UPLOAD')),
 			array('check_upload_big' => GetMessage('SC_T_UPLOAD_BIG')),
@@ -126,7 +127,7 @@ class CSiteCheckerTest
 			array('check_memory_limit' => GetMessage('SC_T_MEMORY')),
 			array('check_cache' => GetMessage('SC_T_CACHE')),
 
-			array('check_update' => GetMessage('SC_UPDATE_ACCESS')), 
+			array('check_update' => GetMessage('SC_UPDATE_ACCESS')),
 			array('check_http_auth' => GetMessage('SC_T_AUTH')),
 			array('check_exec' => GetMessage('SC_T_EXEC')),
 			array('check_getimagesize' => GetMessage('SC_T_GETIMAGESIZE')),
@@ -163,9 +164,18 @@ class CSiteCheckerTest
 					);
 				break;
 				case 3:
-				default:
 					$this->arTest = array(
 						array('check_mysql_table_structure' => GetMessage('SC_T_STRUCTURE')),
+					);
+				break;
+				case 4:
+					$this->arTest = array(
+						array('check_mbstring' => GetMessage('SC_T_MBSTRING')),
+					);
+				break;
+				default:
+					$this->arTest = array(
+						array('check_server_vars' => GetMessage('SC_T_SERVER')),
 					);
 				break;
 			}
@@ -185,8 +195,7 @@ class CSiteCheckerTest
 			else
 			{
 				$profile |= 16;
-				if (strtolower($GLOBALS['DB']->type) == 'mysql')
-					$profile |= 32;
+				$profile |= 32;
 			}
 			$this->arTest = array();
 			$step0 = $step;
@@ -210,7 +219,8 @@ class CSiteCheckerTest
 			}
 		}
 
-		list($this->function, $this->strCurrentTestName) = each($this->arTest[$this->step]);
+		$this->function = key($this->arTest[$this->step]);
+		$this->strCurrentTestName = current($this->arTest[$this->step]);
 		$this->strNextTestName = $this->strCurrentTestName;
 
 		$LICENSE_KEY = '';
@@ -219,7 +229,7 @@ class CSiteCheckerTest
 
 		if ($LICENSE_KEY == '')
 			$LICENSE_KEY = 'DEMO';
-		// define('LICENSE_HASH', md5('CONNECTION_TEST'));
+		define('LICENSE_HASH', md5('CONNECTION_TEST'));
 		$this->LogFile = '/bitrix'.'/site_checker_'.md5('SITE_CHECKER'.$LICENSE_KEY).'.log';
 	}
 
@@ -232,14 +242,22 @@ class CSiteCheckerTest
 		return $ar;
 	}
 
-	public function Start()
+	function Start()
 	{
 		$this->test_percent = 100; // by default
 
 		ob_start();
 		try
 		{
-			$this->result = call_user_func(array($this,$this->function));
+			if ($this->fix_mode && $this->arTestVars['start_function'] != $this->function)
+			{
+				// dummy hit to display zero progress
+				$this->arTestVars['start_function'] = $this->function;
+				$this->test_percent = 0;
+				$this->result = true;
+			}
+			else
+				$this->result = call_user_func(array($this,$this->function));
 		}
 		catch (Exception $e)
 		{
@@ -284,20 +302,14 @@ class CSiteCheckerTest
 				$this->step++;
 				$this->test_percent = 0;
 				$this->arTestVars['last_value'] = '';
-				list($this->function, $this->strNextTestName) = each($this->arTest[$this->step]);
+				$this->function = key($this->arTest[$this->step]);
+				$this->strNextTestName = current($this->arTest[$this->step]);
 			}
 			else // finish
 			{
 				if (!$this->fix_mode) // if we have a kernel
 				{
 					COption::SetOptionString('main', 'site_checker_success', $this->arTestVars['site_checker_success']);
-					CEventLog::Add(array(
-						"SEVERITY" => "WARNING",
-						"AUDIT_TYPE_ID" => $this->arTestVars['site_checker_success'] == 'Y' ? 'SITE_CHECKER_SUCCESS' : 'SITE_CHECKER_ERROR',
-						"MODULE_ID" => "main",
-						"ITEM_ID" => $_SERVER['DOCUMENT_ROOT'],
-						"DESCRIPTION" => '',
-					));
 					if ($this->arTestVars['site_checker_success'] == 'Y')
 						CAdminNotify::DeleteByTag('SITE_CHECKER');
 				}
@@ -310,7 +322,7 @@ class CSiteCheckerTest
 			$this->arTestVars['site_checker_success'] = 'N';
 	}
 
-	public function Result($result, $text = '')
+	function Result($result, $text = '')
 	{
 		if ($result === true)
 			$this->LogResult = 'Ok';
@@ -330,7 +342,7 @@ class CSiteCheckerTest
 		return $result;
 	}
 
-	public function OpenLog()
+	function OpenLog()
 	{
 		$continue = $this->step > 0;
 		if (!$this->LogResourse = fopen($_SERVER['DOCUMENT_ROOT'].$this->LogFile, $continue ? 'ab' : 'wb'))
@@ -338,7 +350,7 @@ class CSiteCheckerTest
 		return $this->LogResourse;
 	}
 
-	public function ConnectToHost($host = false, $port = false, $ssl = false)
+	function ConnectToHost($host = false, $port = false, $ssl = false)
 	{
 		if (!$host)
 		{
@@ -352,7 +364,7 @@ class CSiteCheckerTest
 
 		echo "Connection to $ssl$host:$port	";
 		$res = false;
-		try 
+		try
 		{
 			$res = fsockopen($ssl.$host, $port, $errno, $errstr, 5);
 		}
@@ -372,7 +384,7 @@ class CSiteCheckerTest
 		return $res;
 	}
 
-	public static function Unformat($str)
+	function Unformat($str)
 	{
 		$str = strtolower($str);
 		$res = intval($str);
@@ -388,7 +400,7 @@ class CSiteCheckerTest
 		return $res;
 	}
 
-	public function TableFieldCanBeAltered($f, $f_tmp)
+	function TableFieldCanBeAltered($f, $f_tmp)
 	{
 		if ($f['Type'] == str_replace(array('long','medium'), '', $f_tmp['Type']) || $this->force_repair)
 			return true;
@@ -397,7 +409,7 @@ class CSiteCheckerTest
 			&&
 			preg_match('#^([a-z]+)\(([0-9]+)\)(.*)$#i',$f_tmp['Type'],$regs_tmp)
 			&&
-			str_replace('varchar','char',strtolower($regs[1])) == str_replace('varchar','char',strtolower($regs_tmp[1]))
+			str_replace('varchar', 'char', strtolower($regs[1])) == str_replace('varchar', 'char', strtolower($regs_tmp[1]))
 			&&
 			$regs[2] <= $regs_tmp[2]
 			&&
@@ -411,7 +423,7 @@ class CSiteCheckerTest
 	# {
 	#
 
-	public function check_php_modules()
+	function check_php_modules()
 	{
 		$arMods = array(
 			'fsockopen' => GetMessage("SC_SOCKET_F"),
@@ -422,7 +434,6 @@ class CSiteCheckerTest
 			'imagecreatetruecolor' => GetMessage("SC_MOD_GD"),
 			'imagecreatefromjpeg' => GetMessage("SC_MOD_GD_JPEG"),
 			'json_encode' => GetMessage("SC_MOD_JSON"),
-			'mcrypt_encrypt' => GetMessage("MAIN_SC_MCRYPT").' MCrypt',
 			'hash' => 'Hash',
 			'highlight_file' => 'PHP Syntax Highlight'
 		);
@@ -434,7 +445,11 @@ class CSiteCheckerTest
 				$strError .= $desc."<br>";
 		}
 
-		if (defined('BX_UTF') && BX_UTF === true && !function_exists('mb_substr'))
+		if (!function_exists('openssl_encrypt'))
+			$strError .= GetMessage("MAIN_SC_MCRYPT").' OpenSSL';
+
+
+		if (!function_exists('mb_substr'))
 			$strError .= GetMessage("SC_MOD_MBSTRING")."<br>";
 
 		if (!in_array('ssl', stream_get_transports()))
@@ -442,20 +457,25 @@ class CSiteCheckerTest
 
 		if ($strError)
 			return $this->Result(false,GetMessage('ERR_NO_MODS')."<br>".$strError);
+
+		if (IsModuleInstalled('intranet'))
+		{
+			if (!class_exists('DOMDocument') || !class_exists('ZipArchive'))
+				return $this->Result(null,GetMessage('ERR_NO_MODS_DOC_GENERATOR'));
+		}
 		return $this->Result(true, GetMessage("MAIN_SC_ALL_MODULES"));
 	}
 
-	public function check_php_settings()
+	function check_php_settings()
 	{
 		$strError = '';
-		$PHP_vercheck_min = '5.3.0';
+		$PHP_vercheck_min = '7.3.0';
 		if (version_compare($v = phpversion(), $PHP_vercheck_min, '<'))
 			$strError = GetMessage('SC_VER_ERR', array('#CUR#' => $v, '#REQ#' => $PHP_vercheck_min))."<br>";
 
 		$arRequiredParams = array(
 			'safe_mode' => 0,
 			'file_uploads' => 1,
-//			'session.cookie_httponly' => 0, # 14.0.1:main/include.php:ini_set("session.cookie_httponly", "1");
 			'wincache.chkinterval' => 0,
 			'session.auto_start' => 0,
 			'magic_quotes_runtime' => 0,
@@ -463,8 +483,14 @@ class CSiteCheckerTest
 			'magic_quotes_gpc' => 0,
 			'arg_separator.output' => '&',
 			'register_globals' => 0,
-			'zend.multibyte' => 0
+			'zend.multibyte' => 0,
 		);
+
+		if (extension_loaded('xcache'))
+		{
+			$arRequiredParams['xcache.cacher'] = 0;
+			$arRequiredParams['xcache.stat'] = 1;
+		}
 
 		foreach($arRequiredParams as $param => $val)
 		{
@@ -477,7 +503,11 @@ class CSiteCheckerTest
 			if ($cur != $val)
 				$strError .=  GetMessage('SC_ERR_PHP_PARAM', array('#PARAM#' => $param, '#CUR#' => $cur ? htmlspecialcharsbx($cur) : 'off', '#REQ#' => $val ? 'on' : 'off'))."<br>";
 		}
-		
+
+		$param = 'opcache.revalidate_freq';
+		if (($cur = ini_get($param)) <> 0)
+			$strError .= GetMessage('SC_ERR_PHP_PARAM', array('#PARAM#' => $param, '#CUR#' => htmlspecialcharsbx($cur), '#REQ#' => '0'))."<br>";
+
 		$param = 'default_socket_timeout';
 		if (($cur = ini_get($param)) < 60)
 			$strError .= GetMessage('SC_ERR_PHP_PARAM', array('#PARAM#' => $param, '#CUR#' => htmlspecialcharsbx($cur), '#REQ#' => '60'))."<br>";
@@ -485,8 +515,30 @@ class CSiteCheckerTest
 		if (($m = ini_get('max_input_vars')) && $m < 10000)
 			$strError .= GetMessage('ERR_MAX_INPUT_VARS',array('#MIN#' => 10000,'#CURRENT#' => $m))."<br>";
 
-		if (($vm = getenv('BITRIX_VA_VER')) && version_compare($vm, '4.2.0','<'))
-			$strError .= GetMessage('ERR_OLD_VM')."<br>";
+		if (IsModuleInstalled('intranet'))
+		{
+			$vm = getenv('BITRIX_VA_VER');
+			if (!$vm)
+				$strError .= GetMessage('ERR_NO_VM')."<br>";
+			else
+			{
+				$last_version = '7.3.0';
+				$tmp = $_SERVER['DOCUMENT_ROOT'].'/bitrix/tmp/bitrix-env.version';
+				if (!file_exists($tmp) || time() - filemtime($tmp) > 86400)
+				{
+					$ob = new CHTTP();
+					$ob->http_timeout = 5;
+					$ob->Download('http://repos.1c-bitrix.ru/yum/bitrix-env.version', $tmp);
+				}
+
+				if (file_exists($tmp))
+					$last_version_remote = str_replace('-', '.', file_get_contents($tmp));
+				if (version_compare($last_version_remote, $last_version, '>'))
+					$last_version = $last_version_remote;
+				if (version_compare($vm, $last_version,'<'))
+					$strError .= GetMessage('ERR_OLD_VM', array('#CURRENT#' => $vm, '#LAST_VERSION#' => $last_version))."<br>";
+			}
+		}
 
 		// check_divider
 		$locale_info = localeconv();
@@ -515,13 +567,13 @@ class CSiteCheckerTest
 		return $this->Result(true, GetMessage("MAIN_SC_CORRECT_SETTINGS"));
 	}
 
-	public function check_server_vars()
+	function check_server_vars()
 	{
 		$strError = '';
 		list($host, $port) = explode(':',$_SERVER['HTTP_HOST']);
 		if ($host != 'localhost' && !preg_match('#^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$#',$host))
 		{
-			if (!preg_match('#^[a-z0-9\-\.]{2,192}\.(xn--)?[a-z0-9]{2,63}$#i', $host))
+			if (!preg_match('#^[a-z0-9\-\.]{1,192}\.(xn--)?[a-z0-9]{2,63}$#i', $host))
 				$strError .= GetMessage("SC_TEST_DOMAIN_VALID", array('#VAL#' => htmlspecialcharsbx($_SERVER['HTTP_HOST'])))."<br>";
 		}
 		if ($strError)
@@ -529,7 +581,7 @@ class CSiteCheckerTest
 		return $this->Result(true, GetMessage("MAIN_IS_CORRECT"));
 	}
 
-	public function check_mail($big = false)
+	function check_mail($big = false)
 	{
 		$body = "Test message.\nDelete it.";
 		if ($big)
@@ -556,7 +608,7 @@ class CSiteCheckerTest
 		if ($val)
 		{
 			if ($time > 1)
-				return $this->Result(false, GetMessage('SC_SENT').' '.$time.' '.GetMessage('SC_SEC'));
+				return $this->Result($this->arTestVars['check_bx_crontab'] ? null : false, GetMessage('SC_SENT').' '.$time.' '.GetMessage('SC_SEC'));
 		}
 		else
 			return false;
@@ -564,12 +616,12 @@ class CSiteCheckerTest
 		return true;
 	}
 
-	public function check_mail_big()
+	function check_mail_big()
 	{
 		return $this->check_mail(true);
 	}
 
-	public function check_mail_b_event()
+	function check_mail_b_event()
 	{
 		global $DB, $CACHE_MANAGER;
 
@@ -577,7 +629,7 @@ class CSiteCheckerTest
 		$f = $res->Fetch();
 		if ($f['A'] > 0)
 		{
-			$info = defined('BX_CRONTAB_SUPPORT') && BX_CRONTAB_SUPPORT ? '<br> '.GetMessage('SC_CRON_WARN') : ''; 
+			$info = defined('BX_CRONTAB_SUPPORT') && BX_CRONTAB_SUPPORT ? '<br> '.GetMessage('SC_CRON_WARN') : '';
 			if(CACHED_b_event !== false && $CACHE_MANAGER->Read(CACHED_b_event, "events"))
 				$info .= "<br> ".GetMessage('SC_CACHED_EVENT_WARN');
 			return $this->Result(false, GetMessage('SC_T_MAIL_B_EVENT_ERR').' '.$f['A'].$info);
@@ -585,7 +637,7 @@ class CSiteCheckerTest
 		return true;
 	}
 
-	public function check_connect_mail()
+	function check_connect_mail()
 	{
 		if (!CModule::IncludeModule('mail'))
 			return $this->Result(null, GetMessage("MAIN_SC_MAIL_IS_NOT_INSTALLED"));
@@ -596,18 +648,83 @@ class CSiteCheckerTest
 	}
 
 
-	public function check_socnet()
+	function check_socnet()
 	{
 		if (!CModule::IncludeModule('socialservices'))
 			return $this->Result(null, GetMessage("MAIN_SC_NO_SOCIAL_MODULE"));
 		$oAuthManager = new CSocServAuthManager();
 		$arActiveSocServ = $oAuthManager->GetActiveAuthServices(array());
 		if (count($arActiveSocServ))
-			return true;
+		{
+			if (is_array($arActiveSocServ['Bitrix24Net']))
+				return true;
+			return $this->Result(null, GetMessage("MAIN_SC_NO_SOCIAL_SERVICES_24NET"));
+		}
 		return $this->Result(null, GetMessage("MAIN_SC_NO_SOCIAL_SERVICES"));
 	}
 
-	public function check_socket()
+	function check_rest()
+	{
+		if (!CModule::IncludeModule('rest'))
+			return $this->Result(null, GetMessage("MAIN_SC_NO_REST_MODULE"));
+		return true;
+	}
+
+	function check_mail_push()
+	{
+		$site = \Bitrix\Main\SiteTable::getList(array(
+			'select' => array('LID', 'NAME', 'SERVER_NAME'),
+			'order'  => array('DEF' => 'DESC', 'SORT' => 'ASC'),
+		))->fetch();
+		$context = \Bitrix\Main\Application::getInstance()->getContext();
+
+		$domain = $site['SERVER_NAME'] ?: \COption::getOptionString('main', 'server_name', '');
+
+		if (preg_match('/^(?<domain>.+):(?<port>\d+)$/', $domain, $matches))
+			$domain = $matches['domain'];
+		if (!getmxrr($domain, $mxhosts) || !count($mxhosts))
+			return $this->Result(null ,GetMessage('SC_ERR_DNS', array('#DOMAIN#' => $domain)));
+
+		foreach($mxhosts as $mx)
+		{
+			if ($mx != 'mail-001.bitrix24.com')
+			{
+				print_r($mxhosts);
+				return $this->Result(null, GetMessage('SC_ERR_DNS_WRONG', array('#DOMAIN#' => $mx)));
+			}
+		}
+
+		if (!$res = $this->ConnectToHost('mail-001.bitrix24.com', 25))
+			return $this->Result(null, GetMessage('SC_ERR_CONNECT_MAIL001'));
+
+		echo fgets($res);
+		fwrite($res, "HELO ".$domain."\r\n");
+		echo fgets($res);
+		fwrite($res, "MAIL FROM: sitecheckerfrom@".$domain."\r\n");
+		echo fgets($res);
+		fwrite($res, "RCPT TO: rplsitecheckerto@".$domain."\r\n");
+		echo fgets($res);
+		fwrite($res, "DATA\r\n");
+		echo fgets($res);
+		fwrite($res,
+		"From: sitecheckerfrom@".$domain."\r\n".
+		"To: rplsitecheckerto@".$domain."\r\n".
+		"Subject: Site checker mail test\r\n".
+		"Content-type: text/plain\r\n".
+		"MIME-Version: 1.0\r\n".
+		"\r\n".
+		".\r\n");
+		echo ($str = fgets($res));
+		fclose($res);
+		if (preg_match('#\(Bad Request 400\)#i', $str))
+		{
+			echo "Success\n";
+			return true;
+		}
+		return $this->Result(null, GetMessage('SC_ERR_TEST_MAIL_PUSH', array('#DOMAIN#' => $domain)));
+	}
+
+	function check_socket()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=socket_test&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -623,7 +740,7 @@ class CSiteCheckerTest
 		return $retVal;
 	}
 
-	public function check_compression()
+	function check_compression()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=compression&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -635,16 +752,15 @@ class CSiteCheckerTest
 		if (!$res = $this->ConnectToHost())
 			return false;
 
-		$compression = IsModuleInstalled('compression');
 		$strRes = GetHttpResponse($res, $strRequest, $strHeaders);
 
-		if (preg_match('#gzip|deflate#mi', $strHeaders) && CUtil::BinStrlen($strRes) < 64 * 1024) // comression not supported by server
-			return $compression ? $this->Result(false, GetMessage("MAIN_SC_ENABLED")) : $this->Result(true, GetMessage("MAIN_SC_ENABLED_MOD"));
+		if (preg_match('#gzip|deflate#mi', $strHeaders) && strlen($strRes) < 64 * 1024) // comression not supported by server
+			return $this->Result(true, GetMessage("MAIN_SC_ENABLED_MOD"));
 		else
-			return $compression ? $this->Result(false, GetMessage("MAIN_SC_COMP_DISABLED")) : $this->Result(false, GetMessage("MAIN_SC_COMP_DISABLED_MOD"));
+			return $this->Result(false, GetMessage("MAIN_SC_COMP_DISABLED_MOD"));
 	}
 
-	public function check_socket_ssl()
+	function check_socket_ssl()
 	{
 		if (!file_exists($this->cafile) || filesize($this->cafile) == 0)
 			return $this->Result(null, GetMessage("MAIN_SC_TEST_SSL1"));
@@ -691,7 +807,7 @@ class CSiteCheckerTest
 		return $this->Result(null, GetMessage("MAIN_SC_NO_CONNECTTO", array('#HOST#' => 'https://'.$this->host)));
 	}
 
-	public function check_ad()
+	function check_ad()
 	{
 		if(!CModule::IncludeModule('ldap'))
 			return $this->Result(null, GetMessage("MAIN_SC_NO_LDAP_MODULE"));
@@ -701,7 +817,7 @@ class CSiteCheckerTest
 		return true;
 	}
 
-	public function check_ntlm()
+	function check_ntlm()
 	{
 		if(!CModule::IncludeModule('ldap'))
 			return $this->Result(null, GetMessage("MAIN_SC_NO_LDAP_MODULE"));
@@ -714,7 +830,7 @@ class CSiteCheckerTest
 		return $this->Result(null, GetMessage("MAIN_SC_NO_NTLM"));
 	}
 
-	public function check_ca_file()
+	function check_ca_file()
 	{
 		if (file_exists($this->cafile))
 			unlink($this->cafile);
@@ -726,7 +842,7 @@ class CSiteCheckerTest
 		return $this->Result(null, GetMessage("MAIN_SC_NO_ACCESS").'&quot;');
 	}
 
-	public function check_dbconn()
+	function check_dbconn()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=dbconn_test&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -745,7 +861,7 @@ class CSiteCheckerTest
 		return $retVal;
 	}
 
-	public function check_dbconn_settings()
+	function check_dbconn_settings()
 	{
 		global $DB;
 
@@ -766,7 +882,7 @@ class CSiteCheckerTest
 		return $this->Result(false, GetMessage('SC_ERR_CONN_DIFFER'));
 	}
 
-	public function check_upload($big = false, $raw = false)
+	function check_upload($big = false, $raw = false)
 	{
 		if (($sp = ini_get("upload_tmp_dir")))
 		{
@@ -774,6 +890,15 @@ class CSiteCheckerTest
 				return $this->Result(false,GetMessage('SC_NO_TMP_FOLDER').' <i>('.htmlspecialcharsbx($sp).')</i>');
 			elseif (!is_writable($sp))
 				return $this->Result(false,GetMessage('SC_TMP_FOLDER_PERMS').' <i>('.htmlspecialcharsbx($sp).')</i>');
+		}
+
+		if (defined('BX_TEMPORARY_FILES_DIRECTORY'))
+		{
+			$sp = BX_TEMPORARY_FILES_DIRECTORY;
+			if (!file_exists($sp))
+				return $this->Result(false,GetMessage('SC_NO_TMP_FOLDER').' <i>(BX_TEMPORARY_FILES_DIRECTORY: '.htmlspecialcharsbx($sp).')</i>');
+			elseif (!is_writable($sp))
+				return $this->Result(false,GetMessage('SC_TMP_FOLDER_PERMS').' <i>(BX_TEMPORARY_FILES_DIRECTORY: '.htmlspecialcharsbx($sp).')</i>');
 		}
 
 		$binaryData = '';
@@ -800,7 +925,7 @@ class CSiteCheckerTest
 		$strRequest.= "Host: ".$this->host."\r\n";
 		if (!$raw)
 			$strRequest.= "Content-Type: multipart/form-data; boundary=$boundary\r\n";
-		$strRequest.= "Content-Length: ".(function_exists('mb_strlen') ? mb_strlen($POST, 'ISO-8859-1') : strlen($POST))."\r\n";
+		$strRequest.= "Content-Length: ".strlen($POST)."\r\n";
 		$strRequest.= "\r\n";
 		$strRequest.= $POST;
 
@@ -809,17 +934,17 @@ class CSiteCheckerTest
 		return false;
 	}
 
-	public function check_upload_big()
+	function check_upload_big()
 	{
 		return $this->check_upload(true);
 	}
 
-	public function check_upload_raw()
+	function check_upload_raw()
 	{
 		return $this->check_upload(false, true);
 	}
 
-	public function check_post()
+	function check_post()
 	{
 		$POST = '';
 		for($i=0;$i<201;$i++)
@@ -827,7 +952,7 @@ class CSiteCheckerTest
 
 		$strRequest = "POST "."/bitrix/admin/site_checker.php?test_type=post_test&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
-		$strRequest.= "Content-Length: ".(function_exists('mb_strlen') ? mb_strlen($POST, 'ISO-8859-1') : strlen($POST))."\r\n";
+		$strRequest.= "Content-Length: ".strlen($POST)."\r\n";
 		$strRequest.= "Content-Type: application/x-www-form-urlencoded\r\n";
 
 		$strRequest.= "\r\n";
@@ -838,7 +963,7 @@ class CSiteCheckerTest
 		return false;
 	}
 
-	public function check_memory_limit()
+	function check_memory_limit()
 	{
 		$total_steps = 5;
 
@@ -852,7 +977,7 @@ class CSiteCheckerTest
 		{
 			if (!CheckSerializedData($this->arTestVars['last_value']))
 				return false;
-			list($last_success, $max, $step) = unserialize($this->arTestVars['last_value']);
+			list($last_success, $max, $step) = unserialize($this->arTestVars['last_value'], ['allowed_classes' => false]);
 		}
 
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=memory_test&unique_id=".checker_get_unique_id()."&max=".($max - 1)." HTTP/1.1\r\n";
@@ -880,13 +1005,15 @@ class CSiteCheckerTest
 			$this->arTestVars['last_value'] = serialize(array($last_success, $max, $step));
 			return true;
 		}
-		
+
 		$ok = false;
 		$res = GetMessage('SC_NOT_LESS',array('#VAL#' => $last_success));
 		if (intval($last_success) > 32)
 		{
 			$ok = true;
 			$cur = ini_get('memory_limit');
+			if (preg_match('#([0-9]+) *G#i', $cur, $regs))
+				$cur = $regs[1] * 1024;
 			if ($cur > 0 && $cur < $last_success)
 			{
 				$res .= '<br> '.GetMessage('SC_MEMORY_CHANGED', array('#VAL0#' => $cur, '#VAL1#' => '512M'));
@@ -896,7 +1023,7 @@ class CSiteCheckerTest
 		return $this->Result($ok, $res);
 	}
 
-	public function check_session()
+	function check_session()
 	{
 		if (!$this->arTestVars['last_value'])
 		{
@@ -913,7 +1040,7 @@ class CSiteCheckerTest
 		return true;
 	}
 
-	public function check_session_ua()
+	function check_session_ua()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=session_test&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -944,30 +1071,75 @@ class CSiteCheckerTest
 			return IsHttpResponseSuccess($res, $strRequest);
 	}
 
-	public function check_mbstring()
+	function check_mbstring()
 	{
+		$file = $_SERVER['DOCUMENT_ROOT'].'/bitrix/.settings.php';
+
+		if ($this->fix_mode)
+		{
+			if (!file_exists($file))
+			{
+				\Bitrix\Main\Config\Configuration::wnc();
+				bx_accelerator_reset();
+			}
+			return $this->Result(file_exists($file));
+		}
+
+		if (!file_exists($file))
+		{
+			$this->arTestVars['check_mbstring_fail'] = true;
+			$mode = 4;
+			$link = ' <a href="javascript:show_popup(\'' . GetMessageJS('SC_FIX_MBSTRING') . '\', \'?fix_mode='.$mode.'\', \'' . GetMessageJS('SC_FIX_MBSTRING_CONFIRM') . '\')">' . GetMessage('SC_FIX') . '</a>';
+			return $this->Result(false, GetMessage('SC_ERR_NO_SETTINGS').$link);
+		}
+
+		if (\Bitrix\Main\Config\Configuration::getValue("utf_mode") !== (defined('BX_UTF') && BX_UTF === true))
+		{
+			return $this->Result(false, GetMessage('MAIN_SC_MBSTRING_SETTIGNS_DIFFER'));
+		}
+
+		$encoding = strtolower(ini_get('mbstring.internal_encoding'));
+		$default = strtolower(ini_get('default_charset'));
+
+		if($default == "")
+		{
+			return $this->Result(false, GetMessage("MAIN_SC_DEFAULT_CHARSET"));
+		}
+
+		if($encoding <> '' && $encoding <> $default)
+		{
+			return $this->Result(false, GetMessage("MAIN_SC_ENC_EQUAL"));
+		}
+
+		if(ini_get('mbstring.func_overload') > 0)
+		{
+			//should be non-existent
+			return $this->Result(false, GetMessage("MAIN_SC_FUNC_OVERLOAD"));
+		}
+
 		$retVal = true;
 		$bUtf = false;
 
-		$rs = CSite::GetList($by,$order,array('ACTIVE'=>'Y'));
+		$rs = CSite::GetList('', '', array('ACTIVE'=>'Y'));
 		while($f = $rs->Fetch())
-			if (strpos(strtolower($f['CHARSET']),'utf')!==false)
+		{
+			if (strpos(strtolower($f['CHARSET']), 'utf') !== false)
 			{
 				$bUtf = true;
 				break;
 			}
-
-		$overload  = intval(ini_get('mbstring.func_overload'));
-		$encoding = strtolower(ini_get('mbstring.internal_encoding'));
+		}
 
 		if ($bUtf)
 		{
 			$text = GetMessage('SC_MB_UTF');
 
-			$retVal = ($overload == 2) && ($encoding == 'utf8' || $encoding == 'utf-8');
-			if (!$retVal)
-				$text .= ', '.GetMessage('SC_MB_CUR_SETTINGS').'<br>mbstring.func_overload='.$overload.'<br>mbstring.internal_encoding='.$encoding.
-				'<br>'.GetMessage('SC_MB_REQ_SETTINGS').'<br>mbstring.func_overload=2<br>mbstring.internal_encoding=utf-8';
+			if($default <> "utf-8")
+			{
+				$retVal = false;
+				$text .= '<br>'.GetMessage("MAIN_SC_ENC_UTF");
+				$this->arTestVars['check_mbstring_fail'] = true;
+			}
 
 			if (!defined('BX_UTF') || BX_UTF !== true)
 			{
@@ -980,24 +1152,12 @@ class CSiteCheckerTest
 		{
 			$text = GetMessage('SC_MB_NOT_UTF');
 
-			if ($overload == 2)
+			if($default == "utf-8")
 			{
-				$ru = LANG_CHARSET == 'windows-1251';
-				$mb_string_req = '<br>mbstring.internal_encoding='.($ru ? 'cp1251' : 'latin1');
-
-				if ($ru)
-					$retVal = false !== strpos($encoding,'1251');
-				else
-					$retVal = false === strpos($encoding,'utf');
+				$retVal = false;
+				$text .= '<br>'.GetMessage("MAIN_SC_ENC_NON_UTF");
+				$this->arTestVars['check_mbstring_fail'] = true;
 			}
-			else
-			{
-				$mb_string_req = '<br>mbstring.func_overload=0';
-				$retVal = $overload == 0;
-			}
-			if (!$retVal)
-				$text .= ', '.GetMessage('SC_MB_CUR_SETTINGS').'<br>mbstring.func_overload='.$overload.'<br>mbstring.internal_encoding='.$encoding.
-				'<br>'.GetMessage('SC_MB_REQ_SETTINGS').$mb_string_req;
 
 			if (defined('BX_UTF'))
 			{
@@ -1009,15 +1169,18 @@ class CSiteCheckerTest
 
 		if ($retVal)
 		{
-			$l = strlen("\xd0\xa2");
-			if (!($retVal = $bUtf && $l == 1 || !$bUtf && $l == 2))
+			$retVal = (strlen("\xd0\xa2") == 2);
+			if (!$retVal)
 				$text = GetMessage('SC_STRLEN_FAIL_PHP56');
+
+			if (!$bUtf && LANG_CHARSET == 'windows-1251' && !($retVal = strtoupper("\xe0") == "\xc0"))
+				$text = GetMessage('SC_STRTOUPPER_FAIL');
 		}
 
 		return $this->Result($retVal, ($retVal ? GetMessage("MAIN_SC_CORRECT").'. ':'').$text);
 	}
 
-	public function check_http_auth()
+	function check_http_auth()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=auth_test&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -1029,7 +1192,7 @@ class CSiteCheckerTest
 		return false;
 	}
 
-	public function check_update()
+	function check_update()
 	{
 		$ServerIP = COption::GetOptionString("main", "update_site", "www.bitrixsoft.com");
 		$ServerPort = 80;
@@ -1039,11 +1202,11 @@ class CSiteCheckerTest
 		$proxyUserName = COption::GetOptionString("main", "update_site_proxy_user", "");
 		$proxyPassword = COption::GetOptionString("main", "update_site_proxy_pass", "");
 
-		$bUseProxy = !$this->arTestVars['last_value'] && strlen($proxyAddr) > 0 && strlen($proxyPort) > 0;
+		$bUseProxy = !$this->arTestVars['last_value'] && $proxyAddr <> '' && $proxyPort <> '';
 
 		if ($bUseProxy)
 		{
-			$proxyPort = IntVal($proxyPort);
+			$proxyPort = intval($proxyPort);
 			if ($proxyPort <= 0)
 				$proxyPort = 80;
 
@@ -1061,7 +1224,7 @@ class CSiteCheckerTest
 		if ($bUseProxy)
 		{
 			$strRequest .= "POST http://".$ServerIP."/bitrix/updates/".$page." HTTP/1.0\r\n";
-			if (strlen($proxyUserName) > 0)
+			if ($proxyUserName <> '')
 				$strRequest .= "Proxy-Authorization: Basic ".base64_encode($proxyUserName.":".$proxyPassword)."\r\n";
 		}
 		else
@@ -1077,7 +1240,7 @@ class CSiteCheckerTest
 		$strRequest.= "\r\n";
 
 		$res = false;
-		try 
+		try
 		{
 			$res = fsockopen($requestIP, $requestPort, $errno, $errstr, 5);
 		}
@@ -1095,13 +1258,19 @@ class CSiteCheckerTest
 		}
 		else
 		{
+			if (\Bitrix\Main\Config\Option::get("updateserverlight", "is_turned_on", "N") === "Y")
+				return true;
+
 			$strRes = GetHttpResponse($res, $strRequest, $strHeaders);
 
-			$strRes = strtolower(strip_tags($strRes));
-			if ($strRes == "license key is invalid" || $strRes == "license key is required")
+			if ((strpos($strRes, "EMPTY_LICENSE_KEY") !== false)
+				|| (strpos($strRes, "LICENSE_KEY_REQUIRED") !== false))
+			{
 				return true;
+			}
 			else
 			{
+				$strRes = mb_strtolower(strip_tags($strRes));
 				PrintHTTP($strRequest, $strHeaders, $strRes);
 				if ($bUseProxy)
 					return $this->Result(false, GetMessage('SC_PROXY_ERR_RESP'));
@@ -1111,39 +1280,63 @@ class CSiteCheckerTest
 		}
 	}
 
-	public function check_pull_stream()
+	function check_pull_stream()
 	{
-		$id = 123;
-		$text = 'site_checker test message';
-
-		if (IsModuleInstalled('pull'))
+		if (CModule::IncludeModule('pull'))
 		{
-			if ((COption::GetOptionString('pull', 'nginx', 'N') == 'Y'))
+			$text = md5(mt_rand(100000,999999));
+			$channelId = md5($text);
+			$id = CPullChannel::SignChannel($channelId);
+			if (CPullOptions::GetQueueServerStatus())
 			{
-				if (!$ar = parse_url(str_replace('#DOMAIN#', $this->host, COption::GetOptionString('pull', 'path_to_publish'))))
-					return $this->Result(false, GetMessage("MAIN_SC_PATH_PUB"));
+				$isServerShared = CPullOptions::IsServerShared();
+				if($isServerShared && !\Bitrix\Pull\SharedServer\Config::isRegistered())
+				{
+					$this->arTestVars['push_stream_fail'] = true;
+					return $this->Result(false, GetMessage("MAIN_SC_PULL_NOT_REGISTERED"));
+				}
+				else if (CPullOptions::GetQueueServerVersion() < 4)
+				{
+					$this->arTestVars['push_stream_warn'] = true;
+					return $this->Result(null, GetMessage("MAIN_SC_PULL_UNSUPPORTED_VERSION"));
+				}
+				else
+				{
+					if (!$ar = parse_url(str_replace('#DOMAIN#', $this->host, \Bitrix\Pull\Config::getPublishUrl($id))))
+						return $this->Result(false, GetMessage("MAIN_SC_PATH_PUB"));
 
-				$pub_domain = $ar['host'];
-				$pub_host = ($ar['scheme'] == 'https' ? 'ssl://' : '').$pub_domain;
-				$pub = rtrim($ar['path'], '/').'/?CHANNEL_ID='.$id;
-				$pub_port = $ar['port'];
-				if (!$pub_port)
-					$pub_port = $ar['scheme'] == 'https' ? 443 : 80;
+					$pub_domain = $ar['host'];
+					$pub_host = ($ar['scheme'] == 'https' ? 'ssl://' : '').$pub_domain;
+					$pub = $ar['path'].'?'.$ar['query'];
+					$pub_port = $ar['port'];
+					if (!$pub_port)
+						$pub_port = $ar['scheme'] == 'https' ? 443 : 80;
 
-				if (!$ar = parse_url(str_replace('#DOMAIN#', $this->host, COption::GetOptionString('pull', 'path_to_listener'.($this->ssl ? '_secure' : '')))))
-					return $this->Result(false, GetMessage("MAIN_SC_PATH_SUB"));
+					if($isServerShared)
+					{
+						$listenUrl = \Bitrix\Pull\SharedServer\Config::getLongPollingUrl();
+						$listenUrl .= "?CHANNEL_ID=".$id . "&clientId=".\Bitrix\Pull\SharedServer\Client::getPublicLicenseCode();
+					}
+					else
+					{
+						$listenUrl = $this->ssl ? CPullOptions::GetListenSecureUrl($id) : CPullOptions::GetListenUrl($id);
+					}
 
-				$sub_domain = $ar['host'];
-				$sub_host = ($ar['scheme'] == 'https' ? 'ssl://' : '').$sub_domain;
-				$sub = rtrim($ar['path'], '/').'/?CHANNEL_ID='.$id;
-				$sub_port = $ar['port'];
-				if (!$sub_port)
-					$sub_port = $ar['scheme'] == 'https' ? 443 : 80;
+					if (!$ar = parse_url(str_replace('#DOMAIN#', $this->host, $listenUrl)))
+						return $this->Result(false, GetMessage("MAIN_SC_PATH_SUB"));
+
+					$sub_domain = $ar['host'];
+					$sub_host = ($ar['scheme'] == 'https' ? 'ssl://' : '').$sub_domain;
+					$sub = $ar['path'].'?'.$ar['query'];
+					$sub_port = $ar['port'];
+					if (!$sub_port)
+						$sub_port = $ar['scheme'] == 'https' ? 443 : 80;
+				}
 			}
 			else
 			{
 				$this->arTestVars['push_stream_fail'] = true;
-				return $this->Result(false, GetMessage("MAIN_SC_STREAM_DISABLED"));
+				return $this->Result(false, GetMessage("MAIN_SC_STREAM_DISABLED_2"));
 			}
 		}
 		else
@@ -1151,71 +1344,106 @@ class CSiteCheckerTest
 			$this->arTestVars['push_stream_fail'] = true;
 			return $this->Result(false, GetMessage("MAIN_NO_PULL"));
 		}
-		
-		// POST
-		if (!$res = $this->ConnectToHost($pub_host, $pub_port))
-		{
-			$this->arTestVars['push_stream_fail'] = true;
-			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_CONNECTION"));
-		}
+
+		$ver = CPullOptions::GetQueueServerVersion();
+		$bNodeJS = $ver > 2;
+		echo 'Server version: '.$ver.($bNodeJS ? ' (Bitrix Push server)' : ' (nginx-push-stream-module)')."\n";
+
 		$strRequest0 = 'POST '.$pub.' HTTP/1.0'."\r\n".
 			'Host: '.$pub_domain."\r\n".
 			'Content-Length: '.strlen($text)."\r\n".
 			"\r\n".
 			$text."\r\n";
-		$strRes0 = GetHttpResponse($res, $strRequest0, $strHeaders0);
-
-		// GET
-		if (!$res = $this->ConnectToHost($sub_host, $sub_port))
-		{
-			$this->arTestVars['push_stream_fail'] = true;
-			return $this->Result(false, GetMessage("MAIN_SC_NO_SUB_CONNECTION"));
-		}
 		$strRequest1 = 'GET '.$sub.' HTTP/1.0'."\r\n".
 			'If-Modified-Since: '.date('r', time() - 86400)."\r\n".
 			'Host: '.$sub_domain."\r\n\r\n";
-		$strRes1 = GetHttpResponse($res, $strRequest1, $strHeaders1);
+		$strRequest2 = 'DELETE '.$pub.' HTTP/1.0'."\r\n".
+			'Host: '.$sub_domain."\r\n\r\n";
 
-		$retVal = true;
-		if (false === strpos($strRes1, $text))
+		if (!$bNodeJS)
 		{
-			PrintHTTP($strRequest0, $strHeaders0, $strRes0);
-			PrintHTTP($strRequest1, $strHeaders1, $strRes1);
-			$this->arTestVars['push_stream_fail'] = true;
-			$retVal = $this->Result(false, GetMessage("MAIN_SC_PUSH_INCORRECT"));
+			// POST - to create a channel
+			if (!$res0 = $this->ConnectToHost($pub_host, $pub_port))
+			{
+				$this->arTestVars['push_stream_fail'] = true;
+				return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_CONNECTION"));
+			}
+			fwrite($res0, $strRequest0);
+			fclose($res0);
 		}
-	
-		// DELETE
-		if (!$res = $this->ConnectToHost($pub_host, $pub_port))
+
+		// GET - connection
+		if (!$res1 = $this->ConnectToHost($sub_host, $sub_port))
+		{
+			$this->arTestVars['push_stream_fail'] = true;
+			return $this->Result(false, GetMessage("MAIN_SC_NO_SUB_CONNECTION_2"));
+		}
+		fwrite($res1, $strRequest1);
+		sleep(1); // we need some time to create channel
+
+		// POST - message
+		$postResult = CPullChannel::Send($channelId, $text, ['dont_wait_answer' => false]);
+		if(!$postResult)
 		{
 			$this->arTestVars['push_stream_fail'] = true;
 			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_CONNECTION"));
 		}
-		$strRequest = 'DELETE '.$pub.' HTTP/1.0'."\r\n".
-			'Host: '.$sub_domain."\r\n\r\n";
-		fwrite($res, $strRequest);
-		fclose($res);
+
+		// GET - message
+		$strRes1 = fread($res1, 4096);
+
+		$retVal = true;
+		if (false === strpos($strRes1, $text))
+		{
+//			PrintHTTP($strRequest0, $strHeaders0, $strRes0);
+			PrintHTTP($strRequest1, $strHeaders1, $strRes1);
+			$this->arTestVars['push_stream_fail'] = true;
+			$retVal = $this->Result(false, GetMessage("MAIN_SC_PUSH_INCORRECT", ['#MODULE#' => $bNodeJS ? 'Bitrix Push server' : 'nginx-push-stream-module']));
+		}
+
+		// DELETE
+		if (!$res2 = $this->ConnectToHost($pub_host, $pub_port))
+		{
+			$this->arTestVars['push_stream_fail'] = true;
+			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_CONNECTION_2"));
+		}
+		fwrite($res2, $strRequest2);
+		fclose($res2);
 
 		if ($retVal == true && COption::GetOptionString('main', 'session_expand', 'Y') <> 'N' && (!defined("BX_SKIP_SESSION_EXPAND") || BX_SKIP_SESSION_EXPAND === false))
 			return $this->Result(null, GetMessage('MAIN_SC_WARN_EXPAND_SESSION'));
-	
+
 		return $retVal;
 	}
 
-	public function check_pull_comments()
+	function check_pull_comments()
 	{
-		if ($this->arTestVars['push_stream_fail'])
-			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM"));
+		if ($this->arTestVars['push_stream_warn'])
+		{
+			return $this->Result(null, GetMessage("MAIN_SC_NO_PUSH_STREAM_2"));
+		}
+		else if ($this->arTestVars['push_stream_fail'])
+		{
+			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_2"));
+		}
 		return true;
 	}
 
-	public function check_turn()
+	function check_turn()
 	{
 		if (!IsModuleInstalled('im'))
+		{
 			return $this->Result(null, GetMessage("MAIN_SC_NO_IM"));
+		}
 
-		if ($this->arTestVars['push_stream_fail'])
-			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_VIDEO"));
+		if ($this->arTestVars['push_stream_warn'])
+		{
+			return $this->Result(null, GetMessage("MAIN_SC_NO_PUSH_STREAM_VIDEO_2"));
+		}
+		else if ($this->arTestVars['push_stream_fail'])
+		{
+			return $this->Result(false, GetMessage("MAIN_SC_NO_PUSH_STREAM_VIDEO_2"));
+		}
 
 		if (COption::GetOptionString("im", "turn_server_self") == 'Y')
 			$host = COption::GetOptionString("im", "turn_server");
@@ -1240,11 +1468,11 @@ class CSiteCheckerTest
 		return $this->Result(null, GetMessage("MAIN_SC_NOT_AVAIL"));
 	}
 
-	public function check_push_bitrix()
+	function check_push_bitrix()
 	{
-		if (!IsModuleInstalled('pull'))
+		if (!CModule::IncludeModule('pull'))
 			return $this->Result(null, GetMessage("MAIN_NO_PULL_MODULE"));
-		if (COption::GetOptionString('pull', 'push', 'N') != 'Y')
+		if (!CPullOptions::GetPushStatus())
 			return $this->Result(null, GetMessage("MAIN_NO_OPTION_PULL"));
 
 		if ($this->arTestVars['check_access_fail'])
@@ -1264,7 +1492,7 @@ class CSiteCheckerTest
 		if (!$res = $this->ConnectToHost('ssl://'.$host, 443))
 			return false;
 
-		$strRes = ToLower(GetHttpResponse($res, $strRequest, $strHeaders));
+		$strRes = mb_strtolower(GetHttpResponse($res, $strRequest, $strHeaders));
 		if (strpos($strRes, 'xml version=') !== false)
 			return true;
 
@@ -1272,14 +1500,14 @@ class CSiteCheckerTest
 		return $this->Result(false, GetMessage("MAIN_WRONG_ANSWER_PULL"));
 	}
 
-	public function check_access_docs()
+	function check_access_docs()
 	{
 		if ($this->arTestVars['check_access_fail'])
 			return $this->Result(null, GetMessage("MAIN_SC_NO_EXTERNAL_ACCESS_"));
 		return true;
 	}
 
-	public function check_extranet()
+	function check_extranet()
 	{
 		if ($this->arTestVars['check_access_fail'])
 			return $this->Result(false, GetMessage("MAIN_SC_NO_EXTRANET_CONNECT"));
@@ -1287,7 +1515,7 @@ class CSiteCheckerTest
 	}
 
 
-	public function check_webdav()
+	function check_webdav()
 	{
 		if (!CModule::IncludeModule('webdav') && !CModule::IncludeModule('disk'))
 			return $this->Result(false, GetMessage("MAIN_SC_NO_WEBDAV_MODULE"));
@@ -1321,7 +1549,7 @@ class CSiteCheckerTest
 		return true;
 	}
 
-	public function check_search()
+	function check_search()
 	{
 		if (!CModule::IncludeModule('intranet'))
 			return;
@@ -1351,12 +1579,12 @@ class CSiteCheckerTest
 		return $this->Result(false, $strError);
 	}
 
-	public function check_fast_download()
+	function check_fast_download()
 	{
 		$tmp = $_SERVER['DOCUMENT_ROOT'].'/bitrix/tmp/success.txt';
 		if (!CheckDirPath($tmp) || !file_put_contents($tmp, 'SUCCESS'))
 			return $this->Result(false, GetMessage("MAIN_TMP_FILE_ERROR"));
-		
+
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=fast_download&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
 		$strRequest.= "\r\n";
@@ -1371,16 +1599,16 @@ class CSiteCheckerTest
 		return $retVal;
 	}
 
-	public function check_access_mobile()
+	function check_access_mobile()
 	{
 		$checker = 'checker.internal.bitrix24.com';
 		$retVal = null;
-		
+
 		if (preg_match('#^(127|10|172\.16|192\.168)\.#', $this->host))
 			$status = 0;
 		else
 		{
-			$strRequest = 
+			$strRequest =
 				'GET /check/?license_hash='.LICENSE_HASH.'&host='.urlencode($this->host).'&port='.urlencode($this->port).'&https='.($this->ssl ? 'Y' : 'N').' HTTP/1.1'."\r\n".
 				'host: '.$checker."\r\n".
 				"\r\n";
@@ -1414,18 +1642,18 @@ class CSiteCheckerTest
 			return $this->Result($retVal, GetMessage("MAIN_SC_EXTERNAL_ANSWER_INCORRECT"));
 		}
 
-		if (!IsModuleInstalled('pull'))
-			return $this->Result($retVal, GetMessage("MAIN_NO_PULL_MODULE"));
-		if (COption::GetOptionString('pull', 'push', 'N') != 'Y')
+		if (!CModule::IncludeModule('pull'))
+			return $this->Result(null, GetMessage("MAIN_NO_PULL_MODULE"));
+		if (!CPullOptions::GetPushStatus())
 			return $this->Result(null, GetMessage("MAIN_NO_OPTION_PULL"));
-		if (!$ar = parse_url(COption::GetOptionString('pull', 'path_to_mobile_listener'.($this->ssl ? '_secure' : ''))))
+		if (!$ar = parse_url(str_replace('#DOMAIN#', $this->host, COption::GetOptionString('pull', 'path_to_mobile_listener'.($this->ssl ? '_secure' : '')))))
 			return $this->Result(false, GetMessage("MAIN_SC_PATH_SUB"));
 		$sub_port = $ar['port'];
 		if (!$sub_port)
 			$sub_port = 80;
 		if ($sub_port != $this->port)
 		{
-			$strRequest = 
+			$strRequest =
 				'GET /check/?license_hash='.LICENSE_HASH.'&host='.urlencode($this->host).'&port='.urlencode($sub_port).'&https='.($ar['scheme'] == 'https' ? 'Y' : 'N').' HTTP/1.1'."\r\n".
 				'host: '.$checker."\r\n".
 				"\r\n";
@@ -1438,13 +1666,13 @@ class CSiteCheckerTest
 				return $this->Result($retVal, GetMessage("MAIN_SC_UNKNOWN_ANSWER", array('#HOST#' => $checker)));
 			$status = intval($regs[1]);
 			if (!$status)
-				return $this->Result($retVal, GetMessage("MAIN_SC_NO_PULL_EXTERNAL"));
+				return $this->Result($retVal, GetMessage("MAIN_SC_NO_PULL_EXTERNAL_2"));
 		}
 
 		return true;
 	}
 
-	public function check_perf()
+	function check_perf()
 	{
 		$arTime = array();
 		$count = 3;
@@ -1484,12 +1712,12 @@ class CSiteCheckerTest
 			$strResult = GetMessage("MAIN_PERF_LOW");
 		elseif ($r < 30)
 			$strResult = GetMessage("MAIN_PERF_MID");
-		else 
+		else
 			$strResult = GetMessage("MAIN_PERF_HIGH");
 		return $this->Result($r >= 10, $strResult.' ('.number_format($r , 2, ".", " ").' '.GetMessage("MAIN_PAGES_PER_SECOND").')');
 	}
 
-	public static function check_cache()
+	function check_cache()
 	{
 		$dir = $_SERVER["DOCUMENT_ROOT"].BX_PERSONAL_ROOT."/cache";
 		$file0 = $dir."/".md5(mt_rand());
@@ -1501,7 +1729,7 @@ class CSiteCheckerTest
 		return ($f = fopen($file1, 'wb')) && (fclose($f)) && (rename($file1,$file2)) && (unlink($file2));
 	}
 
-	public function check_exec()
+	function check_exec()
 	{
 		$path = '/bitrix'.'/site_check_exec.php';
 		if (!($f = fopen($_SERVER['DOCUMENT_ROOT'].$path, 'wb')))
@@ -1526,7 +1754,7 @@ class CSiteCheckerTest
 		return $retVal;
 	}
 
-	public function check_security()
+	function check_security()
 	{
 		$strError = '';
 		if (function_exists('apache_get_modules'))
@@ -1543,7 +1771,7 @@ class CSiteCheckerTest
 		return $this->Result(true, GetMessage("MAIN_SC_NO_CONFLICT"));
 	}
 
-	public function check_install_scripts()
+	function check_install_scripts()
 	{
 		$strError = '';
 		foreach(array(
@@ -1555,7 +1783,8 @@ class CSiteCheckerTest
 				'bitrix6setup.php',
 				'bitrix7setup.php',
 				'bitrix8setup.php',
-				'export_file.csv'
+				'export_file.csv',
+				'1c_bx_import.php'
 			) as $file)
 		{
 			if (file_exists($_SERVER['DOCUMENT_ROOT'].'/'.$file))
@@ -1570,7 +1799,7 @@ class CSiteCheckerTest
 		return $this->Result(true, GetMessage("MAIN_SC_ABSENT_ALL"));
 	}
 
-	public static function check_clone()
+	function check_clone()
 	{
 		$x = new CDatabase;
 		$x->b = 'FAIL';
@@ -1581,7 +1810,7 @@ class CSiteCheckerTest
 		return $x->b == 'SUCCESS';
 	}
 
-	public function check_getimagesize()
+	function check_getimagesize()
 	{
 		$file = $_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/fileman/install/components/bitrix/player/mediaplayer/player';
 		if (!file_exists($file))
@@ -1592,7 +1821,7 @@ class CSiteCheckerTest
 		return true;
 	}
 
-	public function check_localredirect()
+	function check_localredirect()
 	{
 		$strSERVER = '';
 		foreach(array('SERVER_PORT', 'HTTPS', 'FCGI_ROLE', 'HTTP_HOST', 'SERVER_PROTOCOL') as $var)
@@ -1609,7 +1838,7 @@ class CSiteCheckerTest
 
 			$strRes = GetHttpResponse($res, $strRequest, $strHeaders);
 
-			if (preg_match('#Location: (.+)#', $strHeaders, $regs))
+			if (preg_match('#Location: (.+)#i', $strHeaders, $regs))
 			{
 				$url = trim($regs[1]);
 				if (!$url)
@@ -1649,17 +1878,17 @@ class CSiteCheckerTest
 		}
 	}
 
-	public function check_sites()
+	function check_sites()
 	{
 		$strError = '';
 		$bUtf = $bChar = $bFound = false;
 		$arDocRoot = array();
 
-		$rs = CSite::GetList($by,$order,array('ACTIVE'=>'Y'));
+		$rs = CSite::GetList('', '', array('ACTIVE'=>'Y'));
 		while($f = $rs->Fetch())
 		{
 			$arDocRoot[] = trim($f['DOC_ROOT']);
-			$bFound = strpos(strtolower($f['CHARSET']),'utf')!==false;
+			$bFound = strpos(strtolower($f['CHARSET']), 'utf') !== false;
 
 			$bUtf = $bUtf || $bFound;
 			$bChar = $bChar || !$bFound;
@@ -1691,7 +1920,7 @@ class CSiteCheckerTest
 		return $this->Result(true, GetMessage("MAIN_SC_CORRECT"));
 	}
 
-	public function check_pcre_recursion()
+	function check_pcre_recursion()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=pcre_recursion_test&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -1707,7 +1936,7 @@ class CSiteCheckerTest
 		return false;
 	}
 
-	public function check_method_exists()
+	function check_method_exists()
 	{
 		$strRequest = "GET "."/bitrix/admin/site_checker.php?test_type=method_exists&unique_id=".checker_get_unique_id()." HTTP/1.1\r\n";
 		$strRequest.= "Host: ".$this->host."\r\n";
@@ -1718,16 +1947,18 @@ class CSiteCheckerTest
 		return false;
 	}
 
-	public function check_bx_crontab()
+	function check_bx_crontab()
 	{
+		$this->arTestVars['check_bx_crontab'] = false;
 		if (defined('BX_CRONTAB'))
 			return $this->Result(false, GetMessage("MAIN_BX_CRONTAB_DEFINED"));
 
 		$bCron = COption::GetOptionString("main", "agents_use_crontab", "N") == 'Y' || defined('BX_CRONTAB_SUPPORT') && BX_CRONTAB_SUPPORT === true || COption::GetOptionString("main", "check_agents", "Y") != 'Y';
 		if ($bCron)
 		{
-			if (!$GLOBALS['DB']->Query('SELECT LAST_EXEC FROM b_agent WHERE LAST_EXEC > NOW() - INTERVAL 1 DAY LIMIT 1')->Fetch())
+			if (!$GLOBALS['DB']->Query('SELECT LAST_EXEC FROM b_agent WHERE LAST_EXEC > NOW() - INTERVAL 1 DAY AND IS_PERIOD = "N" LIMIT 1')->Fetch())
 				return $this->Result(false, GetMessage("MAIN_CRON_NO_START"));
+			$this->arTestVars['check_bx_crontab'] = true;
 			return true;
 		}
 		return $this->Result(null, GetMessage("MAIN_AGENTS_HITS"));
@@ -1736,7 +1967,7 @@ class CSiteCheckerTest
 	##############################
 	# MYSQL Tests follow
 	##############################
-	public function check_mysql_bug_version()
+	function check_mysql_bug_version()
 	{
 		global $DB;
 
@@ -1749,26 +1980,30 @@ class CSiteCheckerTest
 		if ($ver == '4.1.21' // sorting
 			|| $ver == '5.1.34' // auto_increment
 			|| $ver == '5.0.41' // search
-//			|| $ver == '5.1.66' // forum page navigation 
+//			|| $ver == '5.1.66' // forum page navigation
 			)
 			return $this->Result(false,GetMessage('SC_DB_ERR').' '.$ver);
 
 		return true;
 	}
 
-	public function check_mysql_mode()
+	function check_mysql_mode()
 	{
 		global $DB;
 
-		$res = $DB->Query('SHOW VARIABLES LIKE \'sql_mode\'');
-		$f = $res->Fetch();
+		$strError = '';
+		$f = $DB->Query('SHOW VARIABLES LIKE \'innodb_strict_mode\'')->Fetch();
+		if (strtoupper($f['Value']) != 'OFF')
+			$strError = GetMessage('SC_DB_ERR_INNODB_STRICT', ['#VALUE#' => $f['Value']])."<br>";
 
-		if (strlen($f['Value']) > 0)
-			return $this->Result(false,GetMessage('SC_DB_ERR_MODE').' '.$f['Value']);
-		return true;
+		$f = $DB->Query('SHOW VARIABLES LIKE \'sql_mode\'')->Fetch();
+		if ($f['Value'] <> '')
+			$strError .= GetMessage('SC_DB_ERR_MODE').' '.$f['Value'];
+
+		return $strError ? $this->Result(false, $strError) : true;
 	}
 
-	public function check_mysql_time()
+	function check_mysql_time()
 	{
 		global $DB;
 
@@ -1782,7 +2017,7 @@ class CSiteCheckerTest
 		return $this->Result(false, GetMessage('SC_TIME_DIFF', array('#VAL#' => $diff)));
 	}
 
-	public function check_mysql_table_status()
+	function check_mysql_table_status()
 	{
 		global $DB;
 		$time = time();
@@ -1794,7 +2029,7 @@ class CSiteCheckerTest
 		while($f = $res->Fetch())
 		{
 			$i++;
-			list($k, $table) = each($f);
+			$table = current($f);
 
 			if ($this->arTestVars['last_value'])
 			{
@@ -1837,7 +2072,7 @@ class CSiteCheckerTest
 
 	}
 
-	public function check_mysql_connection_charset()
+	function check_mysql_connection_charset()
 	{
 		global $DB;
 		$strError = '';
@@ -1849,13 +2084,28 @@ class CSiteCheckerTest
 		$f = $res->Fetch();
 		$character_set_connection = $f['Value'];
 
-		$res = $DB->Query('SHOW VARIABLES LIKE "collation_connection"');
-		$f = $res->Fetch();
-		$collation_connection = $f['Value'];
+		if ($character_set_connection == 'utf8mb3')
+		{
+			$character_set_connection = 'utf8';
+		}
 
 		$res = $DB->Query('SHOW VARIABLES LIKE "character_set_results"');
 		$f = $res->Fetch();
 		$character_set_results = $f['Value'];
+
+		if ($character_set_results == 'utf8mb3')
+		{
+			$character_set_results = 'utf8';
+		}
+
+		$res = $DB->Query('SHOW VARIABLES LIKE "collation_connection"');
+		$f = $res->Fetch();
+		$collation_connection = $f['Value'];
+
+		if ($collation_connection == 'utf8mb3_unicode_ci')
+		{
+			$collation_connection = 'utf8_unicode_ci';
+		}
 
 		$bAllIn1251 = true;
 		$res1 = $DB->Query('SELECT C.CHARSET FROM b_lang L, b_culture C WHERE C.ID=L.CULTURE_ID AND L.ACTIVE="Y"'); // for 'no kernel mode'
@@ -1889,7 +2139,7 @@ class CSiteCheckerTest
 		return $this->Result(false, $strError);
 	}
 
-	public function check_mysql_db_charset()
+	function check_mysql_db_charset()
 	{
 		global $DB;
 		if ($this->arTestVars['check_mbstring_fail'])
@@ -1941,7 +2191,7 @@ class CSiteCheckerTest
 		return $this->Result(false, $strError);
 	}
 
-	public function check_mysql_table_charset()
+	function check_mysql_table_charset()
 	{
 		global $DB;
 		$strError = '';
@@ -1959,6 +2209,11 @@ class CSiteCheckerTest
 		$f = $res->Fetch();
 		$charset = trim($f['Value']);
 
+		if ($charset == 'utf8mb3')
+		{
+			$charset = 'utf8';
+		}
+
 		$res = $DB->Query('SHOW VARIABLES LIKE "collation_database"');
 		$f = $res->Fetch();
 		$collation = trim($f['Value']);
@@ -1973,12 +2228,14 @@ class CSiteCheckerTest
 			'b_search_content_stem' => 'STEM',
 			'b_search_content_freq' => 'STEM',
 			'b_search_stem' => 'STEM',
-			'b_search_tags' => 'NAME'
+			'b_search_tags' => 'NAME',
+			'b_translate_path' => 'NAME',
+			'b_translate_phrase' => 'CODE',
 		);
 		while($f = $res->Fetch())
 		{
 			$i++;
-			list($k, $table) = each($f);
+			$table = current($f);
 
 			if ($this->arTestVars['last_value'])
 			{
@@ -2025,6 +2282,11 @@ class CSiteCheckerTest
 				$t_charset = getCharsetByCollation($t_collation);
 			}
 
+			if ($t_charset == 'utf8mb3')
+			{
+				$t_charset = 'utf8';
+			}
+
 			if ($charset != $t_charset)
 			{
 				// table charset differs
@@ -2066,6 +2328,12 @@ class CSiteCheckerTest
 					continue;
 
 				$f_charset = getCharsetByCollation($f_collation);
+
+				if ($f_charset == 'utf8mb3')
+				{
+					$f_charset = 'utf8';
+				}
+
 				if ($charset != $f_charset)
 				{
 					// field charset differs
@@ -2078,7 +2346,7 @@ class CSiteCheckerTest
 					}
 					elseif ($this->force_repair)
 						$arFix[] = ' MODIFY `'.$f0['Field'].'` '.$f0['Type'].' CHARACTER SET '.$charset.($f0['Null'] == 'YES' ? ' NULL' : ' NOT NULL').
-							($f0['Default'] === NULL ? ($f0['Null'] == 'YES' ? ' DEFAULT NULL ' : '') : ' DEFAULT '.($f0['Type'] == 'timestamp' && $f0['Default'] == 'CURRENT_TIMESTAMP' ? $f0['Default'] : '"'.$DB->ForSQL($f0['Default']).'"')).' '.$f0['Extra'];
+							($f0['Default'] === NULL ? ($f0['Null'] == 'YES' ? ' DEFAULT NULL ' : '') : ' DEFAULT '.($f0['Type'] == 'timestamp' && $f0['Default'] ? $f0['Default'] : '"'.$DB->ForSQL($f0['Default']).'"')).' '.str_ireplace('DEFAULT_GENERATED', '', $f0['Extra']);
 				}
 				elseif ($collation != $f_collation)
 				{
@@ -2094,7 +2362,7 @@ class CSiteCheckerTest
 					}
 					else
 						$arFix[] = ' MODIFY `'.$f0['Field'].'` '.$f0['Type'].' COLLATE '.$collation.($f0['Null'] == 'YES' ? ' NULL' : ' NOT NULL').
-							($f0['Default'] === NULL ? ($f0['Null'] == 'YES' ? ' DEFAULT NULL ' : '') : ' DEFAULT '.($f0['Type'] == 'timestamp' && $f0['Default'] == 'CURRENT_TIMESTAMP' ? $f0['Default'] : '"'.$DB->ForSQL($f0['Default']).'"')).' '.$f0['Extra'];
+							($f0['Default'] === NULL ? ($f0['Null'] == 'YES' ? ' DEFAULT NULL ' : '') : ' DEFAULT '.($f0['Type'] == 'timestamp' && $f0['Default'] ? $f0['Default'] : '"'.$DB->ForSQL($f0['Default']).'"')).' '.str_ireplace('DEFAULT_GENERATED', '', $f0['Extra']);
 				}
 			}
 
@@ -2129,7 +2397,7 @@ class CSiteCheckerTest
 		}
 	}
 
-	public function check_mysql_table_structure()
+	function check_mysql_table_structure()
 	{
 		global $DB;
 		$strError = '';
@@ -2141,6 +2409,11 @@ class CSiteCheckerTest
 
 		if ($this->arTestVars['table_charset_fail'])
 			return $this->Result(null, GetMessage('SC_TABLE_COLLATION_NA'));
+
+		$DB->Query("SET SQL_MODE=''");
+
+		$f = $DB->Query('SELECT VERSION() v')->Fetch();
+		$this->db_ver = $f['v'];
 
 		$module = '';
 		$cnt = $iCurrent = 0;
@@ -2167,29 +2440,109 @@ class CSiteCheckerTest
 		}
 		else
 			return false;
-				
+
 		$file = $_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/'.$module.'/install/db/mysql/install.sql';
 		if (!file_exists($file))
 			$file = $_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/'.$module.'/install/mysql/install.sql';
 		if (file_exists($file)) // uses database...
 		{
 			$arTableColumns = array();
-			$rs = $DB->Query('SELECT * FROM b_module WHERE id="'.$DB->ForSQL($module).'"');
-			if ($rs->Fetch()) // ... and is installed
-			{
-				if (false === ($query = file_get_contents($file)))
-					return false;
+			$bModuleInstalled = $DB->Query('SELECT * FROM b_module WHERE id="'.$DB->ForSQL($module).'"')->Fetch();
 
-				$arTables = array();
-				$arQuery = $DB->ParseSQLBatch(str_replace("\r", "", $query));
-				foreach($arQuery as $sql)
+			if (false === ($query = file_get_contents($file)))
+				return false;
+
+			$arTables = array();
+			$arQuery = $DB->ParseSQLBatch(str_replace("\r", "", $query));
+			foreach($arQuery as $sql)
+			{
+				if (preg_match('#^(CREATE TABLE )(IF NOT EXISTS)? *`?([a-z0-9_]+)`?(.*);?$#mis',$sql,$regs))
 				{
-					if (preg_match('#^(CREATE TABLE )(IF NOT EXISTS)? *`?([a-z0-9_]+)`?(.*);?$#mis',$sql,$regs))
+					$table = $regs[3];
+					if (preg_match('#^site_checker_#', $table))
+						continue;
+
+					$bTableExists = $DB->Query('SHOW TABLES LIKE "'.$table.'"')->Fetch();
+					if (!$bTableExists && $bModuleInstalled)
 					{
-						$table = $regs[3];
-						if (preg_match('#^site_checker_#', $table))
+						if ($this->fix_mode)
+						{
+							if (!$DB->Query($sql, true))
+								return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
+						}
+						else
+						{
+							$strError .= GetMessage('SC_ERR_NO_TABLE', array('#TABLE#' => $table))."<br>";
+							\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'][] = $sql;
+							$this->arTestVars['iError']++;
+							$this->arTestVars['iErrorAutoFix']++;
+							$this->arTestVars['cntNoTables']++;
 							continue;
-						$rs = $DB->Query('SHOW TABLES LIKE "'.$table.'"');
+						}
+					}
+
+					if ($bTableExists || $bModuleInstalled)
+					{
+						$arTables[$table] = $sql;
+						$tmp_table = 'site_checker_'.$table;
+						$DB->Query('DROP TABLE IF EXISTS `'.$tmp_table.'`');
+						$DB->Query($regs[1].' `'.$tmp_table.'`'.$regs[4]);
+					}
+				}
+				elseif (preg_match('#^(ALTER TABLE)( )?`?([a-z0-9_]+)`?(.*);?$#mis',$sql,$regs))
+				{
+					$table = $regs[3];
+					if (!$arTables[$table])
+						continue;
+					$tmp_table = 'site_checker_'.$table;
+					$DB->Query($regs[1].' `'.$tmp_table.'`'.$regs[4]);
+				}
+				elseif (preg_match('#^INSERT INTO *`?([a-z0-9_]+)`?[^\(]*\(?([^)]*)\)?[^V]*VALUES[^\(]*\((.+)\);?$#mis',$sql,$regs))
+				{
+					$table = $regs[1];
+					if (!$arTables[$table] || $arInsertExclude[$table])
+						continue;
+					$tmp_table = 'site_checker_'.$table;
+
+					if ($regs[2])
+						$arColumns = explode(',', $regs[2]);
+					else
+					{
+						if (!$arTableColumns[$tmp_table])
+						{
+							$rs = $DB->Query('SHOW COLUMNS FROM `'.$tmp_table.'`');
+							while($f = $rs->Fetch())
+								$arTableColumns[$tmp_table][] = $f['Field'];
+						}
+						$arColumns = $arTableColumns[$tmp_table];
+					}
+
+					$strValues = $regs[3];
+					$ar = explode(",",$strValues);
+					$arValues = array();
+					$i = 0;
+					$str = '';
+					foreach($ar as $v)
+					{
+						$str .= ($str ? ',' : '').$v;
+						if (preg_match('#^ *(-?[0-9]+|\'.*\'|".*"|null|now\(\)) *$#i',$str))
+						{
+							$arValues[$i] = $str;
+							$str = '';
+							$i++;
+						}
+					}
+
+					if (!$str)
+					{
+						$sqlSelect = 'SELECT * FROM `'.$table.'` WHERE 1=1 ';
+						foreach($arColumns as $k => $c)
+						{
+							$v = $arValues[$k];
+							if (!preg_match('#null|now\(\)#i',$v))
+								$sqlSelect .= ' AND '.$c.'='.$v;
+						}
+						$rs = $DB->Query($sqlSelect);
 						if (!$rs->Fetch())
 						{
 							if ($this->fix_mode)
@@ -2199,204 +2552,171 @@ class CSiteCheckerTest
 							}
 							else
 							{
-								$strError .= GetMessage('SC_ERR_NO_TABLE', array('#TABLE#' => $table))."<br>";
-								$_SESSION['FixQueryList'][] = $sql;
+								$strError .= GetMessage('SC_ERR_NO_VALUE', array('#TABLE#' => $table, '#SQL#' => $sql))."<br>";
+								\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'][] = $sql;
 								$this->arTestVars['iError']++;
 								$this->arTestVars['iErrorAutoFix']++;
-								$this->arTestVars['cntNoTables']++;
+								$this->arTestVars['cntNoValues']++;
+							}
+						}
+					}
+					else
+						echo "Error parsing SQL:\n".$sql."\n";
+				}
+			}
+
+			if (file_exists($file = str_replace('/install.sql', '/install_ft.sql', $file)))
+			{
+				if (false === ($query = file_get_contents($file)))
+					return false;
+				$query = preg_replace('# on +([a-z_0-9]+) \(#i', ' on site_checker_\\1 (', $query);
+				$arQuery = $DB->ParseSQLBatch(str_replace("\r", "", $query));
+				foreach($arQuery as $sql)
+				{
+					if (!$DB->Query($sql, true))
+						break;
+				}
+			}
+
+			foreach($arTables as $table => $sql)
+			{
+				$tmp_table = 'site_checker_'.$table;
+				$arIndexes = array();
+				$rs = $DB->Query('SHOW INDEXES FROM `'.$table.'`');
+				while($f = $rs->Fetch())
+				{
+					$column = strtolower($f['Column_name'].($f['Sub_part']? '('.$f['Sub_part'].')' : ''));
+					if ($arIndexes[$f['Key_name']])
+						$arIndexes[$f['Key_name']] .= ','.$column;
+					else
+						$arIndexes[$f['Key_name']] = $column;
+				}
+
+				$arIndexes_tmp = array();
+				$arFT = array();
+				$rs = $DB->Query('SHOW INDEXES FROM `'.$tmp_table.'`');
+				while($f = $rs->Fetch())
+				{
+					$column = strtolower($f['Column_name'].($f['Sub_part']? '('.$f['Sub_part'].')' : ''));
+					if ($arIndexes_tmp[$f['Key_name']])
+						$arIndexes_tmp[$f['Key_name']] .= ','.$column;
+					else
+						$arIndexes_tmp[$f['Key_name']] = $column;
+					if ($f['Index_type'] == 'FULLTEXT')
+						$arFT[$f['Key_name']] = true;
+				}
+
+				foreach($arIndexes_tmp as $name => $ix)
+				{
+					if (!in_array($ix,$arIndexes))
+					{
+						if($arIndexes[$name])
+						{
+							if ($name == 'PRIMARY') // dropping primary is not supported
 								continue;
-							}
-						}
 
-						$arTables[$table] = $sql;
-						$tmp_table = 'site_checker_'.$table;
-						$DB->Query('DROP TABLE IF EXISTS `'.$tmp_table.'`');
-						$DB->Query($regs[1].' `'.$tmp_table.'`'.$regs[4]);
+							$sql = 'ALTER TABLE `'.$table.'` DROP INDEX `'.$name.'`';
+							if ($this->fix_mode)
+							{
+								if (!$DB->Query($sql, true))
+									return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
+							}
+							else
+							{
+								\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'][] = $sql;
+								$this->arTestVars['iError']++;
+								$this->arTestVars['iErrorAutoFix']++;
+							}
+						}
 					}
-					elseif (preg_match('#^(ALTER TABLE)( )?`?([a-z0-9_]+)`?(.*);?$#mis',$sql,$regs))
-					{
-						$table = $regs[3];
-						if (!$arTables[$table])
-							continue;
-						$tmp_table = 'site_checker_'.$table;
-						$DB->Query($regs[1].' `'.$tmp_table.'`'.$regs[4]);
-					}
-					elseif (preg_match('#^INSERT INTO *`?([a-z0-9_]+)`?[^\(]*\(?([^)]*)\)?[^V]*VALUES[^\(]*\((.+)\);?$#mis',$sql,$regs))
-					{
-						$table = $regs[1];
-						if (!$arTables[$table] || $arInsertExclude[$table])
-							continue;
-						$tmp_table = 'site_checker_'.$table;
+				}
 
-						if ($regs[2])
-							$arColumns = explode(',', $regs[2]);
-						else
+				$arColumns = array();
+				$rs = $DB->Query('SHOW COLUMNS FROM `'.$table.'`');
+				while($f = $rs->Fetch())
+					$arColumns[strtolower($f['Field'])] = $f;
+
+				$rs = $DB->Query('SHOW COLUMNS FROM `'.$tmp_table.'`');
+				while($f_tmp = $rs->Fetch())
+				{
+					$tmp = TableFieldConstruct($f_tmp);
+					if ($f = $arColumns[strtolower($f_tmp['Field'])])
+					{
+						if (($cur = TableFieldConstruct($f)) != $tmp)
 						{
-							if (!$arTableColumns[$tmp_table])
+							$sql = 'ALTER TABLE `'.$table.'` CHANGE `'.$f['Field'].'` '.$tmp;
+							if ($this->fix_mode)
 							{
-								$rs = $DB->Query('SHOW COLUMNS FROM `'.$tmp_table.'`');
-								while($f = $rs->Fetch())
-									$arTableColumns[$tmp_table][] = $f['Field'];
-							}
-							$arColumns = $arTableColumns[$tmp_table];
-						}
-						
-						$strValues = $regs[3];
-						$ar = explode(",",$strValues);
-						$arValues = array();
-						$i = 0;
-						$str = '';
-						foreach($ar as $v)
-						{
-							$str .= ($str ? ',' : '').$v;
-							if (preg_match('#^ *(-?[0-9]+|\'.*\'|".*"|null|now\(\)) *$#i',$str)) 
-							{
-								$arValues[$i] = $str;
-								$str = '';
-								$i++;
-							}
-						}
-						
-						if (!$str)
-						{
-							$sqlSelect = 'SELECT * FROM `'.$table.'` WHERE 1=1 ';
-							foreach($arColumns as $k => $c)
-							{
-								$v = $arValues[$k];
-								if (!preg_match('#null|now\(\)#i',$v))
-									$sqlSelect .= ' AND '.$c.'='.$v;
-							}
-							$rs = $DB->Query($sqlSelect);
-							if (!$rs->Fetch())
-							{
-								if ($this->fix_mode)
+								if ($this->TableFieldCanBeAltered($f, $f_tmp))
 								{
 									if (!$DB->Query($sql, true))
 										return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
 								}
 								else
-								{
-									$strError .= GetMessage('SC_ERR_NO_VALUE', array('#TABLE#' => $table, '#SQL#' => $sql))."<br>";
-									$_SESSION['FixQueryList'][] = $sql;
-									$this->arTestVars['iError']++;
+									$this->arTestVars['iErrorFix']++;
+							}
+							else
+							{
+								\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'][] = $sql;
+								$strError .= GetMessage('SC_ERR_FIELD_DIFFERS', array('#TABLE#' => $table, '#FIELD#' => $f['Field'], '#CUR#' => $cur, '#NEW#' => $tmp))."<br>";
+								$this->arTestVars['iError']++;
+								if ($this->TableFieldCanBeAltered($f, $f_tmp))
 									$this->arTestVars['iErrorAutoFix']++;
-									$this->arTestVars['cntNoValues']++;
-								}
+								$this->arTestVars['cntDiffFields']++;
 							}
 						}
+					}
+					else
+					{
+						$sql = 'ALTER TABLE `'.$table.'` ADD '.preg_replace('#auto_increment#i', '' , $tmp); // if only Primary Key is missing we will have to pass the test twice
+						if ($this->fix_mode)
+						{
+							if (!$DB->Query($sql, true))
+								return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
+						}
 						else
-							echo "Error parsing SQL:\n".$sql."\n";
+						{
+							\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'][] = $sql;
+							$strError .= GetMessage('SC_ERR_NO_FIELD', array('#TABLE#' => $table, '#FIELD#' => $f_tmp['Field']))."<br>";
+							$this->arTestVars['iError']++;
+							$this->arTestVars['iErrorAutoFix']++;
+							$this->arTestVars['cntNoFields']++;
+						}
 					}
 				}
 
-				foreach($arTables as $table => $sql)
+				foreach($arIndexes_tmp as $name => $ix)
 				{
-					$tmp_table = 'site_checker_'.$table;
-					$arColumns = array();
-					$rs = $DB->Query('SHOW COLUMNS FROM `'.$table.'`');
-					while($f = $rs->Fetch())
-						$arColumns[strtolower($f['Field'])] = $f;
-
-					$rs = $DB->Query('SHOW COLUMNS FROM `'.$tmp_table.'`');
-					while($f_tmp = $rs->Fetch())
+					if (!in_array($ix,$arIndexes))
 					{
-						$tmp = TableFieldConstruct($f_tmp);
-						if ($f = $arColumns[strtolower($f_tmp['Field'])])
+						if ($name == 'PRIMARY' && $arIndexes['PRIMARY']) // Primary key exists
 						{
-							if (($cur = TableFieldConstruct($f)) != $tmp)
-							{
-								$sql = 'ALTER TABLE `'.$table.'` MODIFY `'.$f_tmp['Field'].'` '.$tmp;
-								if ($this->fix_mode)
-								{
-									if ($this->TableFieldCanBeAltered($f, $f_tmp))
-									{
-										if (!$DB->Query($sql, true))
-											return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
-									}
-									else
-										$this->arTestVars['iErrorFix']++;
-								}
-								else
-								{
-									$_SESSION['FixQueryList'][] = $sql;
-									$strError .= GetMessage('SC_ERR_FIELD_DIFFERS', array('#TABLE#' => $table, '#FIELD#' => $f['Field'], '#CUR#' => $cur, '#NEW#' => $tmp))."<br>";
-									$this->arTestVars['iError']++;
-									if ($this->TableFieldCanBeAltered($f, $f_tmp))
-										$this->arTestVars['iErrorAutoFix']++;
-									$this->arTestVars['cntDiffFields']++;
-								}
-							}
+							$this->arTestVars['iError']++;
+							$strError .= GetMessage('SC_ERR_NO_INDEX', array('#TABLE#' => $table, '#INDEX#' => $name.' ('.$ix.')'))."<br>";
+							continue;
+						}
+
+						$sql = $name == 'PRIMARY' ? 'ALTER TABLE `'.$table.'` ADD PRIMARY KEY ('.$ix.')' : 'CREATE '.($arFT[$name] ? 'FULLTEXT ' : '').'INDEX `'.$name.'` ON `'.$table.'` ('.$ix.')';
+						if ($this->fix_mode)
+						{
+							if (!$DB->Query($sql, true))
+								return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
 						}
 						else
 						{
-							$sql = 'ALTER TABLE `'.$table.'` ADD `'.$f_tmp['Field'].'` '.str_replace('auto_increment', '' , strtolower($tmp)); // if only Primary Key is missing we will have to pass the test twice
-							if ($this->fix_mode)
-							{
-								if (!$DB->Query($sql, true))
-									return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
-							}
-							else
-							{
-								$_SESSION['FixQueryList'][] = $sql;
-								$strError .= GetMessage('SC_ERR_NO_FIELD', array('#TABLE#' => $table, '#FIELD#' => $f_tmp['Field']))."<br>";
-								$this->arTestVars['iError']++;
-								$this->arTestVars['iErrorAutoFix']++;
-								$this->arTestVars['cntNoFields']++;
-							}
+							\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'][] = $sql;
+							$strError .= GetMessage('SC_ERR_NO_INDEX', array('#TABLE#' => $table, '#INDEX#' => $name.' ('.$ix.')'))."<br>";
+							$this->arTestVars['iError']++;
+							$this->arTestVars['iErrorAutoFix']++;
+							$this->arTestVars['cntNoIndexes']++;
 						}
 					}
-
-					$arIndexes = array();
-					$rs = $DB->Query('SHOW INDEXES FROM `'.$table.'`');
-					while($f = $rs->Fetch())
-					{
-						$ix =& $arIndexes[$f['Key_name']];
-						$column = strtolower($f['Column_name'].($f['Sub_part'] ? '('.$f['Sub_part'].')' : ''));
-						if ($ix)
-							$ix .= ','.$column;
-						else
-							$ix = $column;
-					}
-
-					$arIndexes_tmp = array();
-					$rs = $DB->Query('SHOW INDEXES FROM `'.$tmp_table.'`');
-					while($f = $rs->Fetch())
-					{
-						$ix =& $arIndexes_tmp[$f['Key_name']];
-						$column = strtolower($f['Column_name'].($f['Sub_part'] ? '('.$f['Sub_part'].')' : ''));
-						if ($ix)
-							$ix .= ','.$column;
-						else
-							$ix = $column;
-					}
-					unset($ix); // unlink the reference
-					foreach($arIndexes_tmp as $name => $ix)
-					{
-						if (!in_array($ix,$arIndexes))
-						{
-							while($arIndexes[$name])
-								$name .= '_sc';
-							$sql = $name == 'PRIMARY' ? 'ALTER TABLE `'.$table.'` ADD PRIMARY KEY ('.$ix.')' : 'CREATE INDEX `'.$name.'` ON `'.$table.'` ('.$ix.')';
-							if ($this->fix_mode)
-							{
-								if (!$DB->Query($sql, true))
-									return $this->Result(false, 'Mysql Query Error: '.$sql.' ['.$DB->db_Error.']');
-							}
-							else
-							{
-								$_SESSION['FixQueryList'][] = $sql;
-								$strError .= GetMessage('SC_ERR_NO_INDEX', array('#TABLE#' => $table, '#INDEX#' => $name.' ('.$ix.')'))."<br>";
-								$this->arTestVars['iError']++;
-								$this->arTestVars['iErrorAutoFix']++;
-								$this->arTestVars['cntNoIndexes']++;
-							}
-						}
-					}
-
-					$DB->Query('DROP TABLE `'.$tmp_table.'`');
 				}
-				echo $strError; // to log
+
+				$DB->Query('DROP TABLE `'.$tmp_table.'`');
 			}
+
+			echo $strError; // to log
 		}
 
 		if ($iCurrent < $cnt) // partial
@@ -2409,7 +2729,7 @@ class CSiteCheckerTest
 		if ($this->fix_mode)
 		{
 			if ($this->arTestVars['iErrorFix'] > 0)
-				return $this->Result(null, GetMessage('SC_CHECK_TABLES_STRUCT_ERRORS_FIX', 
+				return $this->Result(null, GetMessage('SC_CHECK_TABLES_STRUCT_ERRORS_FIX',
 					array(
 						'#VAL#' => intval($this->arTestVars['iErrorFix']),
 					)));
@@ -2419,9 +2739,10 @@ class CSiteCheckerTest
 		{
 			if ($this->arTestVars['iError'] > 0)
 			{
-				echo implode(";\n", $_SESSION['FixQueryList']).';';
-				$_SESSION['FixQueryList'] = array();
-				return $this->Result(false, GetMessage('SC_CHECK_TABLES_STRUCT_ERRORS', 
+				if (is_array(\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList']) && count(\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList']))
+					echo implode(";\n", \Bitrix\Main\Application::getInstance()->getSession()['FixQueryList']).';';
+				\Bitrix\Main\Application::getInstance()->getSession()['FixQueryList'] = array();
+				return $this->Result(false, GetMessage('SC_CHECK_TABLES_STRUCT_ERRORS',
 					array(
 						'#VAL#' => intval($this->arTestVars['iError']),
 						'#VAL1#' => intval($this->arTestVars['iErrorAutoFix']),
@@ -2472,7 +2793,7 @@ class CSiteCheckerTest
 			if ($oTest->result === false)
 			{
 				$ar = Array(
-					"MESSAGE" => 
+					"MESSAGE" =>
 						(
 							IsModuleInstalled('intranet') ?
 							GetMessage("MAIN_SC_GOT_ERRORS", array('#LINK#' => "/bitrix/admin/site_checker.php?lang=".LANGUAGE_ID."&express_test=Y")) :
@@ -2480,10 +2801,9 @@ class CSiteCheckerTest
 						),
 					"TAG" => "SITE_CHECKER",
 					"MODULE_ID" => "MAIN",
-					'TYPE' => 'ERROR'
+					'NOTIFY_TYPE' => CAdminNotify::TYPE_NORMAL
 				);
 				CAdminNotify::Add($ar);
-
 				break;
 			}
 
@@ -2491,6 +2811,22 @@ class CSiteCheckerTest
 				break;
 			$step++;
 		}
+
+		$REMOTE_ADDR = $_SERVER['REMOTE_ADDR'];
+		$HTTP_USER_AGENT= $_SERVER['HTTP_USER_AGENT'];
+		$_SERVER['REMOTE_ADDR'] = '-';
+		$_SERVER['HTTP_USER_AGENT'] = '-';
+		CEventLog::Add(array(
+			"SEVERITY" => "WARNING",
+			"AUDIT_TYPE_ID" => $oTest->arTestVars['site_checker_success'] == 'Y' ? 'SITE_CHECKER_SUCCESS' : 'SITE_CHECKER_ERROR',
+			"MODULE_ID" => "main",
+			"ITEM_ID" => 'CSiteCheckerTest::CommonTest();',
+			"URL" => '-',
+			"DESCRIPTION" => '',
+		));
+		$_SERVER['REMOTE_ADDR'] = $REMOTE_ADDR;
+		$_SERVER['HTTP_USER_AGENT'] = $HTTP_USER_AGENT;
+
 		return "CSiteCheckerTest::CommonTest();";
 	}
 }
@@ -2510,7 +2846,7 @@ class CSearchFiles
 
 	}
 
-	public function Search($path)
+	function Search($path)
 	{
 		if (time() - $this->StartTime > $this->TimeLimit)
 		{
@@ -2523,7 +2859,7 @@ class CSearchFiles
 
 		if ($this->SkipPath)
 		{
-			if (0!==strpos($this->SkipPath, dirname($path)))
+			if (0 !== strpos($this->SkipPath, dirname($path)))
 				return null;
 
 			if ($this->SkipPath == $path)
@@ -2620,7 +2956,7 @@ function GetHttpResponse($res, $strRequest, &$strHeaders)
 
 		$strChunkSize = "";
 		$i = 0;
-		while ($i < CUtil::BinStrlen($line) && in_array($line[$i], array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f")))
+		while ($i < strlen($line) && in_array($line[$i], array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f")))
 		{
 			$strChunkSize .= $line[$i];
 			$i++;
@@ -2636,7 +2972,7 @@ function GetHttpResponse($res, $strRequest, &$strHeaders)
 			while ($readSize > 0 && $line = fread($res, $readSize))
 			{
 				$strRes .= $line;
-				$processedSize += CUtil::BinStrlen($line);
+				$processedSize += strlen($line);
 				$newSize = $chunkSize - $processedSize;
 				$readSize = (($newSize > $maxReadSize) ? $maxReadSize : $newSize);
 			}
@@ -2647,7 +2983,7 @@ function GetHttpResponse($res, $strRequest, &$strHeaders)
 
 			$strChunkSize = "";
 			$i = 0;
-			while ($i < CUtil::BinStrlen($line) && in_array($line[$i], array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f")))
+			while ($i < strlen($line) && in_array($line[$i], array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f")))
 			{
 				$strChunkSize .= $line[$i];
 				$i++;
@@ -2695,77 +3031,10 @@ function getCharsetByCollation($collation)
 
 function InitPureDB()
 {
-	if (!function_exists('SendError'))
-	{
+	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/tools.php");
 
-		/**
-		* <p>Отсылает по E-Mail сообщение об ошибке.</p> <p>Для работы функции необходимо, чтобы до ее вызова была определена константа <b>ERROR_EMAIL</b>, содержащая E-Mail адрес на который будут отправляться сообщения об ошибках. Если эта константа не определена, то функция не выполняет никаких действий. Константа <b>ERROR_EMAIL</b> при необходимости определяется в начале текущей страницы или в одном из файлов: 	</p> <ul> <li> <b>/bitrix/php_interface/dbconn.php</b> 		</li> <li> <b>/bitrix/php_interface/</b><i>ID сайта</i><b>/init.php</b> 	</li> </ul> <p>Помимо текста ошибки, в письмо будут включены: </p> <ul> <li> <b>HTTP_GET_VARS</b> - массив переменных пришедших на страницу в HTTP запросе типа GET 	</li> <li> <b>HTTP_POST_VARS</b> - массив переменных пришедших на страницу в HTTP запросе типа POST 	</li> <li> <b>HTTP_COOKIE_VARS</b> - массив переменных хранящихся у посетителя на локальной машине (cookie) 	</li> <li> <b>HTTP_SERVER_VARS</b> - массив стандартных серверных переменных </li> </ul> <p>Данная функция вызывается в случае ошибки в следующих функциях: 	</p> <ul> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cdatabase/connect.php">CDataBase::Connect</a> 		</li> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cdatabase/query.php">CDataBase::Query</a> 		</li> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cdatabase/querybind.php">CDataBase::QueryBind</a> 		</li> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cdatabase/querybindselect.php">CDataBase::QueryBindSelect</a>		 		</li> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cdbresult/fetch.php">CDBResult::Fetch</a> (только для Oracle версии) 	</li> </ul>
-		*
-		*
-		* @param string $text  Текст сообщения.
-		*
-		* @param string $module_id = "" <a href="http://dev.1c-bitrix.ru/api_help/main/general/identifiers.php">Идентификатор модуля</a>,
-		* который сохраняет сообщение.<br>Необязательный параметр, по
-		* умолчанию - "".
-		*
-		* @return mixed 
-		*
-		* <h4>Example</h4> 
-		* <pre bgcolor="#323232" style="padding:5px;">
-		* &lt;?
-		* // файл /bitrix/php_interface/dbconn.php
-		* 
-		* // определим константу ERROR_EMAIL, в которой зададим E-Mail администратора
-		* define("ERROR_EMAIL", "admin@site.ru");
-		* ?&gt;
-		* &lt;?
-		* <b>SendError</b>("Произвольное текстовое сообщение");
-		* ?&gt;
-		* </pre>
-		*
-		*
-		* @static
-		* @link http://dev.1c-bitrix.ru/api_help/main/functions/debug/senderror.php
-		* @author Bitrix
-		*/
-		function SendError($str)
-		{
-		}
-	}
 	if (!function_exists('IsModuleInstalled'))
 	{
-
-		/**
-		* <p>Проверяет установлен ли модуль. Возвращает "true", если модуль установлен. Иначе - "false".</p> <p class="note"><b>Примечание</b>. Для использования функций и классов того или иного модуля, его необходимо предварительно подключить с помощью функции <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cmodule/includemodule.php">CModule::IncludeModule</a>.</p>
-		*
-		*
-		* @param string $module_id  <a href="http://dev.1c-bitrix.ru/api_help/main/general/identifiers.php">Идентификатор модуля</a>.
-		*
-		* @return bool 
-		*
-		* <h4>Example</h4> 
-		* <pre bgcolor="#323232" style="padding:5px;">
-		* &lt;?
-		* if (<b>IsModuleInstalled</b>("iblock")):
-		* 	
-		*     echo "Модуль информационных блоков установлен";
-		* 
-		* endif;
-		* ?&gt;
-		* </pre>
-		*
-		*
-		* <h4>See Also</h4> 
-		* <ul> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cmodule/isinstalled.php">CModule::IsInstalled</a>
-		* </li> <li> <a
-		* href="http://dev.1c-bitrix.ru/api_help/main/reference/cmodule/includemodule.php">CModule::IncludeModule</a> </li>
-		* </ul><a name="examples"></a>
-		*
-		*
-		* @static
-		* @link http://dev.1c-bitrix.ru/api_help/main/functions/module/ismoduleinstalled.php
-		* @author Bitrix
-		*/
 		function IsModuleInstalled($module)
 		{
 			if ($m = trim($module))
@@ -2773,11 +3042,11 @@ function InitPureDB()
 			return false;
 		}
 	}
-	global $DB, $DBType, $DBDebug, $DBDebugToFile, $DBHost, $DBName, $DBLogin, $DBPassword;
+
+	global $DB, $DBDebug, $DBDebugToFile, $DBHost, $DBName, $DBLogin, $DBPassword;
 
 	/**
 	 * Defined in dbconn.php
-	 * @var $DBType
 	 * @var $DBDebug
 	 * @var $DBDebugToFile
 	 * @var $DBHost
@@ -2786,16 +3055,18 @@ function InitPureDB()
 	 * @var $DBPassword
 	 */
 	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/php_interface/dbconn.php");
+
 	if(defined('BX_UTF'))
-		// define('BX_UTF_PCRE_MODIFIER', 'u');
+		define('BX_UTF_PCRE_MODIFIER', 'u');
 	else
 		define('BX_UTF_PCRE_MODIFIER', '');
 
-	include_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/lib/loader.php");
-	$application = \Bitrix\Main\HttpApplication::getInstance();
-	$application->initializeBasicKernel();
+	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/lib/loader.php");
+	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/autoload.php");
 
-	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/classes/".$DBType."/database.php");
+	$application = \Bitrix\Main\HttpApplication::getInstance();
+
+	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/classes/mysql/database.php");
 
 	$DB = new CDatabase;
 	$DB->debug = $DBDebug;
@@ -2803,22 +3074,64 @@ function InitPureDB()
 
 	if(!($DB->Connect($DBHost, $DBName, $DBLogin, $DBPassword)) || !($DB->DoConnect()))
 	{
-		if(file_exists(($fname = $_SERVER["DOCUMENT_ROOT"]."/bitrix/php_interface/dbconn_error.php")))
-			include($fname);
-		else
-			include($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/dbconn_error.php");
+		CDatabase::showConnectionError();
 		die();
 	}
-	if (file_exists($fname = $_SERVER["DOCUMENT_ROOT"]."/bitrix/php_interface/after_connect.php"))
-		require_once($fname);
-	if (file_exists($fname = $_SERVER["DOCUMENT_ROOT"]."/bitrix/php_interface/after_connect_d7.php"))
-		require_once($fname);
 }
 
-function TableFieldConstruct($f0)
+function TableFieldConstruct($field)
 {
 	global $DB;
-	return $f0['Type'].($f0['Null'] == 'YES' ? ' NULL' : ' NOT NULL').($f0['Default'] === NULL ? ($f0['Null'] == 'YES' ? ' DEFAULT NULL ' : '') : ' DEFAULT '.($f0['Type'] == 'timestamp' && $f0['Default'] == 'CURRENT_TIMESTAMP' ? $f0['Default'] : '"'.$DB->ForSQL($f0['Default']).'"')).' '.$f0['Extra'];
+
+	$tmp = '`'.$field['Field'].'` ';
+
+	if (preg_match("/^(TINYINT|SMALLINT|MEDIUMINT|INT|BIGINT)\\(\d+\\)(.*)/i", $field['Type'], $matches))
+	{
+		// As of MySQL 8.0.17, the ZEROFILL attribute is deprecated for numeric data types, as is the display width attribute for integer data types
+		$tmp .= $matches[1] . $matches[2];
+	}
+	else
+	{
+		$tmp .= $field['Type'];
+	}
+
+	if ($field['Null'] == 'YES')
+	{
+		$tmp .= ' NULL';
+	}
+	else
+	{
+		$tmp .= ' NOT NULL';
+	}
+
+	if ($field['Default'] === NULL)
+	{
+		if ($field['Null'] == 'YES')
+		{
+			$tmp .= ' DEFAULT NULL ';
+		}
+	}
+	else
+	{
+		$tmp .= ' DEFAULT ';
+		if (($field['Type'] == 'timestamp' || $field['Type'] == 'datetime') && !preg_match('#^\d{4}#', $field['Default']))
+		{
+			$tmp .= $field['Default'];
+		}
+		elseif ($field['Type'] == 'text' && preg_match("/^'.*'$/", $field['Default']))
+		{
+			// MariaDB's bug with text fields default values in single quotes
+			$tmp .= $field['Default'];
+		}
+		else
+		{
+			$tmp .= "'" . $DB->ForSQL($field['Default']) . "'";
+		}
+	}
+
+	$tmp .= ' ' . str_ireplace('DEFAULT_GENERATED', '', $field['Extra']);
+
+	return trim($tmp);
 }
 
 function fix_link($mode = 2)
@@ -2828,13 +3141,13 @@ function fix_link($mode = 2)
 
 function PrintHTTP($strRequest, $strHeaders, $strRes)
 {
-	echo 
+	echo
 	"== Request ==\n".
-	(($l = CUtil::BinStrlen($strRequest)) > 1000 ? CUtil::BinSubstr($strRequest, 0, 1000).' ... ('.$l.' bytes)' : $strRequest)."\n".
+	(($l = strlen($strRequest)) > 1000 ? substr($strRequest, 0, 1000).' ... ('.$l.' bytes)' : $strRequest)."\n".
 	"== Response ==\n".
 	$strHeaders."\n".
 	"== Body ==\n".
-	(($l = CUtil::BinStrlen($strRes)) > 1000 ? CUtil::BinSubstr($strRes, 0, 1000).' ... ('.$l.' bytes)' : $strRes)."\n".
+	(($l = strlen($strRes)) > 1000 ? substr($strRes, 0, 1000).' ... ('.$l.' bytes)' : $strRes)."\n".
 	"==========\n";
 }
 

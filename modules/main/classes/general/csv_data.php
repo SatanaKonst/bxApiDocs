@@ -6,8 +6,6 @@
  * @copyright 2001-2014 Bitrix
  */
 
-use Bitrix\Main\Text\BinaryString;
-
 class CCSVData
 {
 	var $sFileName;			// full file name
@@ -31,7 +29,7 @@ class CCSVData
 		$this->SetFirstHeader($first_header);
 	}
 
-	public function LoadFile($filename)
+	function LoadFile($filename)
 	{
 		$this->sFileName = $filename;
 		$this->__file = fopen($this->sFileName, "rb");
@@ -49,7 +47,7 @@ class CCSVData
 		}
 	}
 
-	public function CheckUTF8BOM()
+	function CheckUTF8BOM()
 	{
 		//check UTF-8 Byte-Order Mark
 		fseek($this->__file, 0);
@@ -60,27 +58,27 @@ class CCSVData
 		}
 	}
 
-	public function SetFieldsType($fields_type = "R")
+	function SetFieldsType($fields_type = "R")
 	{
 		$this->cFieldsType = ($fields_type == "F"? "F" : "R");
 	}
 
-	public function SetDelimiter($delimiter = ";")
+	function SetDelimiter($delimiter = ";")
 	{
-		$this->cDelimiter = (strlen($delimiter) > 1? substr($delimiter, 0, 1) : $delimiter);
+		$this->cDelimiter = (mb_strlen($delimiter) > 1? mb_substr($delimiter, 0, 1) : $delimiter);
 	}
 
-	public function SetFirstHeader($first_header = false)
+	function SetFirstHeader($first_header = false)
 	{
 		$this->bFirstHeader = $first_header;
 	}
 
-	public function GetFirstHeader()
+	function GetFirstHeader()
 	{
 		return $this->bFirstHeader;
 	}
 
-	public function SetWidthMap($arMap)
+	function SetWidthMap($arMap)
 	{
 		$this->arWidthMap = array();
 		for ($i = 0, $n = count($arMap); $i < $n; $i++)
@@ -89,7 +87,7 @@ class CCSVData
 		}
 	}
 
-	public function FetchDelimiter()
+	function FetchDelimiter()
 	{
 		$bInString = false;
 		$str = "";
@@ -166,7 +164,7 @@ class CCSVData
 				{
 					$this->__buffer = fread($this->__file, 1024*1024);
 				}
-				$this->__buffer_size = BinaryString::getLength($this->__buffer);
+				$this->__buffer_size = strlen($this->__buffer);
 				$this->__buffer_pos = 0;
 			}
 
@@ -188,7 +186,7 @@ class CCSVData
 		}
 	}
 
-	public function FetchWidth()
+	function FetchWidth()
 	{
 		$str = "";
 		$ind = 1;
@@ -246,7 +244,7 @@ class CCSVData
 				{
 					$this->__buffer = fread($this->__file, 1024*1024);
 				}
-				$this->__buffer_size = BinaryString::getLength($this->__buffer);
+				$this->__buffer_size = strlen($this->__buffer);
 				$this->__buffer_pos = 0;
 			}
 
@@ -269,7 +267,7 @@ class CCSVData
 		}
 	}
 
-	public function Fetch()
+	function Fetch()
 	{
 		if ($this->cFieldsType == "R")
 		{
@@ -289,7 +287,7 @@ class CCSVData
 		}
 	}
 
-	public function IncCurPos()
+	function IncCurPos()
 	{
 		$this->iCurPos++;
 		$this->__buffer_pos++;
@@ -303,22 +301,22 @@ class CCSVData
 			{
 				$this->__buffer = fread($this->__file, 1024*1024);
 			}
-			$this->__buffer_size = BinaryString::getLength($this->__buffer);
+			$this->__buffer_size = strlen($this->__buffer);
 			$this->__buffer_pos = 0;
 		}
 	}
 
-	public function MoveFirst()
+	function MoveFirst()
 	{
 		$this->SetPos(0);
 	}
 
-	public function GetPos()
+	function GetPos()
 	{
 		return $this->iCurPos;
 	}
 
-	public function SetPos($iCurPos = 0)
+	function SetPos($iCurPos = 0)
 	{
 		$iCurPos = intval($iCurPos);
 		if ($iCurPos <= $this->iFileLength)
@@ -345,11 +343,11 @@ class CCSVData
 		{
 			$this->__buffer = fread($this->__file, 1024*1024);
 		}
-		$this->__buffer_size = BinaryString::getLength($this->__buffer);
+		$this->__buffer_size = strlen($this->__buffer);
 		$this->__buffer_pos = 0;
 	}
 
-	public function SaveFile($filename, $arFields)
+	function SaveFile($filename, $arFields)
 	{
 		$this->sFileName = $filename;
 
@@ -362,10 +360,10 @@ class CCSVData
 				{
 					$this->sContent .= $this->cDelimiter;
 				}
-				$pos1 = strpos($arFields[$i], $this->cDelimiter);
-				$pos2 = strpos($arFields[$i], "\"");
-				$pos3 = strpos($arFields[$i], "\n");
-				$pos4 = strpos($arFields[$i], "\r");
+				$pos1 = mb_strpos($arFields[$i], $this->cDelimiter);
+				$pos2 = mb_strpos($arFields[$i], "\"");
+				$pos3 = mb_strpos($arFields[$i], "\n");
+				$pos4 = mb_strpos($arFields[$i], "\r");
 				if ($pos1 !== false || $pos2 !== false || $pos3 !== false || $pos4 !== false)
 				{
 					$this->sContent .= "\"";

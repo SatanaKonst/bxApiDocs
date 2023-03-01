@@ -1,4 +1,4 @@
-<?
+<?php
 /*********************************************************************
 						Caching
 *********************************************************************/
@@ -18,7 +18,7 @@ class CPHPCacheFiles
 	var $read = false;
 	var $path = "";
 
-	public static function IsAvailable()
+	function IsAvailable()
 	{
 		return true;
 	}
@@ -78,11 +78,11 @@ class CPHPCacheFiles
 		return "";
 	}
 
-	public static function clean($basedir, $initdir = false, $filename = false)
+	function clean($basedir, $initdir = false, $filename = false)
 	{
 		$DOCUMENT_ROOT = rtrim($_SERVER["DOCUMENT_ROOT"], "/");
 
-		if(strlen($filename))
+		if($filename <> '')
 		{
 			$res = CPHPCacheFiles::_unlink($DOCUMENT_ROOT.$basedir.$initdir.$filename);
 			bx_accelerator_reset();
@@ -104,12 +104,18 @@ class CPHPCacheFiles
 						while($entry = readdir($dh))
 						{
 							if(preg_match("/^(\\.|\\.\\.|.*\\.~\\d+)\$/", $entry))
+							{
 								continue;
+							}
 
 							if(is_dir($sourceDir."/".$entry))
+							{
 								CPHPCacheFiles::clean($basedir, $entry);
+							}
 							elseif(is_file($sourceDir."/".$entry))
+							{
 								CPHPCacheFiles::_unlink($sourceDir."/".$entry);
+							}
 						}
 					}
 				}
@@ -126,32 +132,40 @@ class CPHPCacheFiles
 					if($target != '')
 					{
 						if(
-							$DB->Query("INSERT INTO b_cache_tag (SITE_ID, CACHE_SALT, RELATIVE_PATH, TAG)
+						$DB->Query("INSERT INTO b_cache_tag (SITE_ID, CACHE_SALT, RELATIVE_PATH, TAG)
 							VALUES ('*', '*', '".$DB->ForSQL($target)."', '*')")
 						)
 						{
 							if(@rename($DOCUMENT_ROOT.$source, $DOCUMENT_ROOT.$target))
+							{
 								$bDelayedDelete = true;
+							}
 						}
 					}
 				}
 
 				if($bDelayedDelete)
+				{
 					CPHPCacheFiles::_addAgent();
+				}
 				else
+				{
 					DeleteDirFilesEx($basedir.$initdir);
+				}
 
 				bx_accelerator_reset();
 			}
 		}
 	}
 
-	public function read(&$arAllVars, $basedir, $initdir, $filename, $TTL)
+	function read(&$arAllVars, $basedir, $initdir, $filename, $TTL)
 	{
 		$fn = rtrim($_SERVER["DOCUMENT_ROOT"], "/")."/".ltrim($basedir.$initdir, "/").$filename;
 
 		if(!file_exists($fn))
 			return false;
+
+		$handle = null;
 
 		if(is_array($arAllVars))
 		{
@@ -182,23 +196,29 @@ class CPHPCacheFiles
 		$this->read = @filesize($fn);
 		$this->path = $fn;
 
-		if(intval($datecreate) < (mktime() - $TTL))
-			return false;
-
-		if(is_array($arAllVars))
+		$res = false;
+		if(intval($datecreate) >= (time() - $TTL))
 		{
-			$arAllVars = unserialize($ser_content);
+			if(is_array($arAllVars))
+			{
+				$arAllVars = unserialize($ser_content);
+			}
+			else
+			{
+				$arAllVars = fread($handle, filesize($fn));
+			}
+			$res = true;
 		}
-		else
+
+		if($handle)
 		{
-			$arAllVars = fread($handle, filesize($fn));
 			fclose($handle);
 		}
 
-		return true;
+		return $res;
 	}
 
-	public function write($arAllVars, $basedir, $initdir, $filename, $TTL)
+	function write($arAllVars, $basedir, $initdir, $filename, $TTL)
 	{
 		$folder = rtrim($_SERVER["DOCUMENT_ROOT"], "/")."/".ltrim($basedir.$initdir, "/");
 		$fn = $folder.$filename;
@@ -213,21 +233,21 @@ class CPHPCacheFiles
 			{
 				$contents = "<?";
 				$contents .= "\nif(\$INCLUDE_FROM_CACHE!='Y')return false;";
-				$contents .= "\n\$datecreate = '".str_pad(mktime(), 12, "0", STR_PAD_LEFT)."';";
-				$contents .= "\n\$dateexpire = '".str_pad(mktime() + IntVal($TTL), 12, "0", STR_PAD_LEFT)."';";
+				$contents .= "\n\$datecreate = '".str_pad(time(), 12, "0", STR_PAD_LEFT)."';";
+				$contents .= "\n\$dateexpire = '".str_pad(time() + intval($TTL), 12, "0", STR_PAD_LEFT)."';";
 				$contents .= "\n\$ser_content = '".str_replace("'", "\'", str_replace("\\", "\\\\", serialize($arAllVars)))."';";
 				$contents .= "\nreturn true;";
 				$contents .= "\n?>";
 			}
 			else
 			{
-				$contents = "BX".str_pad(mktime(), 12, "0", STR_PAD_LEFT).str_pad(mktime() + IntVal($this->TTL), 12, "0", STR_PAD_LEFT);
+				$contents = "BX".str_pad(time(), 12, "0", STR_PAD_LEFT).str_pad(time() + intval($this->TTL), 12, "0", STR_PAD_LEFT);
 				$contents .= $arAllVars;
 			}
 
 			$this->written = fwrite($handle, $contents);
 			$this->path = $fn;
-			$len = function_exists('mb_strlen')? mb_strlen($contents, 'latin1'): strlen($contents);
+			$len = function_exists('mb_strlen')? mb_strlen($contents, 'latin1') : mb_strlen($contents);
 
 			fclose($handle);
 
@@ -240,7 +260,7 @@ class CPHPCacheFiles
 		}
 	}
 
-	public static function IsCacheExpired($path)
+	function IsCacheExpired($path)
 	{
 		if(!file_exists($path))
 			return true;
@@ -259,7 +279,7 @@ class CPHPCacheFiles
 			|| preg_match("/^(\\d{12})/", $str_tmp, $arTmp)
 		)
 		{
-			if(strlen($arTmp[1]) <= 0 || doubleval($arTmp[1]) < mktime())
+			if($arTmp[1] == '' || doubleval($arTmp[1]) < time())
 				return true;
 		}
 
@@ -307,12 +327,7 @@ class CPHPCacheFiles
 
 			if($bDeleteFromQueue)
 			{
-				$DB->Query("
-					DELETE FROM b_cache_tag
-					WHERE SITE_ID = '".$DB->ForSQL($ar["SITE_ID"])."'
-					AND CACHE_SALT = '".$DB->ForSQL($ar["CACHE_SALT"])."'
-					AND RELATIVE_PATH = '".$DB->ForSQL($ar["RELATIVE_PATH"])."'
-				");
+				$DB->Query("DELETE FROM b_cache_tag WHERE ID = ".intval($ar["ID"]));
 			}
 		}
 	}
@@ -382,4 +397,3 @@ class CPHPCacheFiles
 			return "";
 	}
 }
-?>

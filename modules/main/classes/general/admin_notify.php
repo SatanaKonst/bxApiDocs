@@ -1,29 +1,16 @@
 <?
 IncludeModuleLangFile(__FILE__);
 
-
-/**
- * <b>CAdminNotify</b> - класс для работы с системными уведомлениями.
- *
- *
- * @return mixed 
- *
- * @static
- * @link http://dev.1c-bitrix.ru/api_help/main/reference/cadminnotify/index.php
- * @author Bitrix
- */
 class CAdminNotify
 {
-	const TYPE_NORMAL = 'NORMAL';
-	const TYPE_ERROR = 'ERROR';
+	const TYPE_NORMAL = 'M';
+	const TYPE_ERROR = 'E';
 
 	protected static function CleanCache()
 	{
 		global $CACHE_MANAGER;
 
-		$by = 'lid';
-		$order = 'asc';
-		$rsLangs = CLanguage::GetList($by, $order);
+		$rsLangs = CLanguage::GetList('lid', 'asc');
 		while ($arLang = $rsLangs->Fetch())
 		{
 			$CACHE_MANAGER->Clean("admin_notify_list_".$arLang['LANGUAGE_ID']);
@@ -31,44 +18,6 @@ class CAdminNotify
 		$CACHE_MANAGER->Clean("admin_notify_list");
 	}
 
-	
-	/**
-	* <p>Метод служит для добавления уведомления. Нестатический метод.</p>
-	*
-	*
-	* @param mixed $MESSAGE  Произвольный текст, поддерживает работу со следующим тэгами
-	* <b>BR</b>, <b>B</b>, <b>U</b>, <b>I</b>, <b>SPAN</b> <b>A</b>. (В последних двух можно
-	* использовать <b>style</b>).
-	*
-	* @param MESSAG $TAG  Метка уведомления, для его легкого удаления (не обязательное
-	* поле).  <p></p> <div class="note"> <b>Примечание</b>: Если добавить два
-	* уведомления с одинаковым тэгом (пустой тэг не считается)
-	* останется только последнее уведомление.</div>
-	*
-	* @param TA $MODULE_ID  Модуль отправивший уведомление (не обязательное поле).
-	*
-	* @param MODULE_I $ENABLE_CLOSE  Может ли администратор закрыть уведомление сам из интерфейса,
-	* или будет требоваться удаление через API (не обязательное, по
-	* умолчанию может).
-	*
-	* @return mixed <p>Взвращается ID созданного уведомления.</p><a name="examples"></a>
-	*
-	* <h4>Example</h4> 
-	* <pre bgcolor="#323232" style="padding:5px;">
-	* $ar = Array(
-	*    "MESSAGE" =&gt; 'Вы обновили модуль "Веб-мессенджер", для работы с историей сообщений вам необходимо произвести &lt;a href="#"&gt;конвертацию данных&lt;/a&gt;.',
-	*    "TAG" =&gt; "IM_CONVERT",
-	*    "MODULE_ID" =&gt; "IM",
-	*    "ENABLE_CLOSE" =&gt; "N"
-	* );
-	* $ID = CAdminNotify::Add($ar);
-	* </pre>
-	*
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_help/main/reference/cadminnotify/add.php
-	* @author Bitrix
-	*/
 	public static function Add($arFields)
 	{
 		global $DB;
@@ -80,7 +29,7 @@ class CAdminNotify
 		if (!is_set($arFields['ENABLE_CLOSE']))
 			$arFields['ENABLE_CLOSE'] = 'Y';
 
-		if (is_set($arFields['TAG']) && strlen(trim($arFields['TAG']))>0)
+		if (is_set($arFields['TAG']) && trim($arFields['TAG']) <> '')
 		{
 			$arFields['TAG'] = trim($arFields['TAG']);
 			self::DeleteByTag($arFields['TAG']);
@@ -90,17 +39,19 @@ class CAdminNotify
 			$arFields['TAG'] = "";
 		}
 
-		if (!isset($arFields['TYPE']) || !in_array($arFields['TYPE'], Array(self::TYPE_NORMAL, self::TYPE_ERROR)))
-			$arFields['TYPE'] = self::TYPE_NORMAL;
+		$arFields['PUBLIC_SECTION'] = (isset($arFields['PUBLIC_SECTION']) && $arFields['PUBLIC_SECTION'] == 'Y' ? 'Y' : 'N');
+		if (!isset($arFields['NOTIFY_TYPE']) || !in_array($arFields['NOTIFY_TYPE'], array(self::TYPE_NORMAL, self::TYPE_ERROR)))
+			$arFields['NOTIFY_TYPE'] = self::TYPE_NORMAL;
 
-		$arFields_i = Array(
+		$arFields_i = array(
 			'MODULE_ID'	=> is_set($arFields['MODULE_ID'])? trim($arFields['MODULE_ID']): "",
 			'TAG'	=> $arFields['TAG'],
 			'MESSAGE'	=> trim($arFields['MESSAGE']),
 			'ENABLE_CLOSE'	=> $arFields['ENABLE_CLOSE'],
-			'PUBLIC_SECTION' => $arFields['PUBLIC_SECTION']
+			'PUBLIC_SECTION' => $arFields['PUBLIC_SECTION'],
+			'NOTIFY_TYPE' => $arFields['NOTIFY_TYPE']
 		);
-		$ID = $DB->Add('b_admin_notify', $arFields_i, Array('MESSAGE'));
+		$ID = $DB->Add('b_admin_notify', $arFields_i, array('MESSAGE'));
 
 		if ($ID)
 		{
@@ -134,7 +85,6 @@ class CAdminNotify
 			$aMsg[] = array('id'=>'MESSAGE', 'text'=>GetMessage('MAIN_AN_ERROR_MESSAGE'));
 		if(is_set($arFields, 'ENABLE_CLOSE') && !($arFields['ENABLE_CLOSE'] == 'Y' || $arFields['ENABLE_CLOSE'] == 'N'))
 			$aMsg[] = array('id'=>'ENABLE_CLOSE', 'text'=>GetMessage('MAIN_AN_ERROR_ENABLE_CLOSE'));
-		$arFields['PUBLIC_SECTION'] = (isset($arFields['PUBLIC_SECTION']) && $arFields['PUBLIC_SECTION'] == 'Y' ? 'Y' : 'N');
 
 		if(!empty($aMsg))
 		{
@@ -146,32 +96,12 @@ class CAdminNotify
 		return true;
 	}
 
-	
-	/**
-	* <p>Метод удаляет уведомление по идентификатору. Статический метод.</p>
-	*
-	*
-	* @param mixed $intID  Идентификатор уведомления
-	*
-	* @return mixed <p>Возвращает <i>true</i>, если удаление совершено, в противном случае -
-	* <i>false</i>.</p><a name="examples"></a>
-	*
-	* <h4>Example</h4> 
-	* <pre bgcolor="#323232" style="padding:5px;">
-	* CAdminNotify::Delete(1)
-	* </pre>
-	*
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_help/main/reference/cadminnotify/delete.php
-	* @author Bitrix
-	*/
 	public static function Delete($ID)
 	{
 		global $DB;
 		$err_mess = (self::err_mess()).'<br />Function: Delete<br />Line: ';
-		$ID = intval($ID);
-		if (0 >= $ID)
+		$ID = (int)$ID;
+		if ($ID <= 0)
 			return false;
 
 		$strSql = "DELETE FROM b_admin_notify_lang WHERE NOTIFY_ID = ".$ID;
@@ -184,26 +114,6 @@ class CAdminNotify
 		return true;
 	}
 
-	
-	/**
-	* <p>Метод удаляет уведомление по идентификатору модуля. Статический метод.</p>
-	*
-	*
-	* @param mixed $moduleId  Идентификатор модуля
-	*
-	* @return mixed <p>Возвращает <i>true</i>, если удаление совершено, в противном случае -
-	* <i>false</i>.</p><a name="examples"></a>
-	*
-	* <h4>Example</h4> 
-	* <pre bgcolor="#323232" style="padding:5px;">
-	* CAdminNotify::DeleteByModule("xmpp")
-	* </pre>
-	*
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_help/main/reference/cadminnotify/deletebymodule.php
-	* @author Bitrix
-	*/
 	public static function DeleteByModule($moduleId)
 	{
 		global $DB;
@@ -219,26 +129,6 @@ class CAdminNotify
 		return true;
 	}
 
-	
-	/**
-	* <p>Метод удаляет уведомление по тегу. Статический метод.</p>
-	*
-	*
-	* @param mixed $tag  Идентификатор тега
-	*
-	* @return mixed <p>Возвращает <i>true</i>, если удаление совершено, в противном случае -
-	* <i>false</i>.</p><a name="examples"></a>
-	*
-	* <h4>Example</h4> 
-	* <pre bgcolor="#323232" style="padding:5px;">
-	* CAdminNotify::DeleteByTag("IM_CONVERT")
-	* </pre>
-	*
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_help/main/reference/cadminnotify/deletebytag.php
-	* @author Bitrix
-	*/
 	public static function DeleteByTag($tagId)
 	{
 		global $DB;
@@ -288,45 +178,13 @@ class CAdminNotify
 		$html = "";
 		foreach ($arNotify as $value)
 		{
-			$html .= '<div class="adm-warning-block" data-id="'.intval($value['ID']).'" data-ajax="Y"><span class="adm-warning-text">'.$value['MESSAGE'].'</span><span class="adm-warning-icon"></span>'.($value['ENABLE_CLOSE'] == 'Y' ? '<span onclick="BX.adminPanel ? BX.adminPanel.hideNotify(this.parentNode) : BX.admin.panel.hideNotify(this.parentNode);" class="adm-warning-close"></span>' : '').'</div>';
+			$className = ($value['NOTIFY_TYPE'] == self::TYPE_ERROR ? 'adm-warning-block adm-warning-block-red' : 'adm-warning-block');
+			$html .= '<div class="'.$className.'" data-id="'.(int)$value['ID'].'" data-ajax="Y"><span class="adm-warning-text">'.$value['MESSAGE'].'</span><span class="adm-warning-icon"></span>'.($value['ENABLE_CLOSE'] == 'Y' ? '<span onclick="BX.adminPanel ? BX.adminPanel.hideNotify(this.parentNode) : BX.admin.panel.hideNotify(this.parentNode);" class="adm-warning-close"></span>' : '').'</div>';
 		}
 
 		return $html;
 	}
 
-	
-	/**
-	* <p>Метод производит выборку уведомлений с сортировкой и фильтрацией. Статический метод.</p>
-	*
-	*
-	* @param array $arSort = array() Сортировка осуществляется по: <ul> <li> <b>ID</b> - идентификатору
-	* сообщения;</li> <li> <b>MODULE_ID</b> - идентификатору модуля, к которому
-	* относится сообщение.</li>   </ul>
-	*
-	* @param array $arFilter = array() Фильтрация осуществляется по: <ul> <li> <b>ID</b> - идентификатору
-	* сообщения;</li> <li> <b>MODULE_ID</b> - идентификатору модуля, к которому
-	* относится сообщение;</li>  <li> <b>TAG</b> - тегу;</li>  <li> <b>ENABLE_CLOSE</b>-
-	* разрешению на ручное закрытие.</li>  </ul>
-	*
-	* @return mixed <p>Возвращается экземляр класса <a
-	* href="http://dev.1c-bitrix.ru/api_help/main/reference/cdbresult/index.php">CDBResult</a> для дальней
-	* обработки.</p>
-	*
-	* <h4>Example</h4> 
-	* <pre bgcolor="#323232" style="padding:5px;">
-	* CAdminNotify::GetList(array('ID' =&gt; 'DESC'), array('MODULE_ID'=&gt;'main'));
-	* </pre>
-	*
-	*
-	* <h4>See Also</h4> 
-	* <ul> <li> <a href="http://dev.1c-bitrix.ru/api_help/main/reference/cdbresult/index.php">CDBResult</a> </li> </ul><a
-	* name="examples"></a>
-	*
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_help/main/reference/cadminnotify/getlist.php
-	* @author Bitrix
-	*/
 	public static function GetList($arSort=array(), $arFilter=array())
 	{
 		global $DB;
@@ -343,7 +201,7 @@ class CAdminNotify
 			$arFilter['PUBLIC_SECTION'] = 'N';
 
 		$strFrom = '';
-		$strSelect = "AN.ID, AN.MODULE_ID, AN.TAG, AN.MESSAGE, AN.ENABLE_CLOSE, AN.PUBLIC_SECTION";
+		$strSelect = "AN.*";
 
 		if (is_array($arFilter))
 		{
@@ -351,30 +209,30 @@ class CAdminNotify
 			for ($i=0, $ic=count($filter_keys); $i<$ic; $i++)
 			{
 				$val = $arFilter[$filter_keys[$i]];
-				if (strlen($val)<=0 || $val=='NOT_REF') continue;
-				switch(strtoupper($filter_keys[$i]))
+				if ((string)$val == '' || $val=='NOT_REF') continue;
+				switch(mb_strtoupper($filter_keys[$i]))
 				{
 					case 'ID':
 						$arSqlSearch[] = GetFilterQuery('AN.ID', $val, 'N');
-					break;
+						break;
 					case 'MODULE_ID':
 						$arSqlSearch[] = GetFilterQuery('AN.MODULE_ID', $val);
-					break;
+						break;
 					case 'TAG':
 						$arSqlSearch[] = GetFilterQuery('AN.TAG', $val);
-					break;
+						break;
 					case 'MESSAGE':
 						$arSqlSearch[] = GetFilterQuery('AN.MESSAGE', $val);
-					break;
+						break;
 					case 'ENABLE_CLOSE':
-						$arSqlSearch[] = ($val=='Y') ? "AN.ENABLE_CLOSE='Y'" : "AN.ENABLE_CLOSE='N'";
-					break;
+						$arSqlSearch[] = ($val == 'Y')? "AN.ENABLE_CLOSE='Y'" : "AN.ENABLE_CLOSE='N'";
+						break;
 					case 'LID':
 						$strSelect .= ", ANL.MESSAGE as MESSAGE_LANG";
 						$strFrom = 'LEFT JOIN b_admin_notify_lang ANL ON (AN.ID = ANL.NOTIFY_ID AND ANL.LID = \''.$DB->ForSQL($val).'\')';
 						break;
 					case 'PUBLIC_SECTION':
-						$arSqlSearch[] = ($val=='Y') ? "AN.PUBLIC_SECTION='Y'" : "AN.PUBLIC_SECTION='N'";
+						$arSqlSearch[] = ($val == 'Y')? "AN.PUBLIC_SECTION='Y'" : "AN.PUBLIC_SECTION='N'";
 				}
 			}
 		}
@@ -382,16 +240,22 @@ class CAdminNotify
 		$sOrder = '';
 		foreach($arSort as $key=>$val)
 		{
-			$ord = (strtoupper($val) <> 'ASC'? 'DESC':'ASC');
-			switch (strtoupper($key))
+			$ord = (mb_strtoupper($val) <> 'ASC'? 'DESC':'ASC');
+			switch(mb_strtoupper($key))
 			{
-				case 'ID':		$sOrder .= ', AN.ID '.$ord; break;
-				case 'MODULE_ID':	$sOrder .= ', AN.MODULE_ID '.$ord; break;
-				case 'ENABLE_CLOSE':	$sOrder .= ', AN.ENABLE_CLOSE '.$ord; break;
+				case 'ID':
+					$sOrder .= ', AN.ID '.$ord;
+					break;
+				case 'MODULE_ID':
+					$sOrder .= ', AN.MODULE_ID '.$ord;
+					break;
+				case 'ENABLE_CLOSE':
+					$sOrder .= ', AN.ENABLE_CLOSE '.$ord;
+					break;
 			}
 		}
 
-		if (strlen($sOrder)<=0)
+		if ($sOrder == '')
 			$sOrder = 'AN.ID DESC';
 
 		$strSqlOrder = ' ORDER BY '.TrimEx($sOrder,',');

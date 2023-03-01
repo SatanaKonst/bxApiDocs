@@ -24,16 +24,16 @@ class CControllerClient
 
 		$prefix = COption::GetOptionString("main", "auth_controller_prefix", "controller");
 		if(
-			($prefix!='' && substr(strtolower($arParams["LOGIN"]), 0, strlen($prefix)) == $prefix)
+			($prefix!='' && mb_substr(mb_strtolower($arParams["LOGIN"]), 0, mb_strlen($prefix) + 1) == $prefix.'\\')
 			||
-			($prefix=='' && strpos($arParams["LOGIN"], "\\")===false)
+			($prefix=='' && mb_strpos($arParams["LOGIN"], "\\") === false)
 		)
 		{
 			$site = $prefix;
 			if($prefix=='')
 				$login = $arParams["LOGIN"];
 			else
-				$login = substr($arParams["LOGIN"], strlen($prefix)+1);
+				$login = mb_substr($arParams["LOGIN"], mb_strlen($prefix) + 1);
 			$password = $arParams["PASSWORD"];
 			$arVars = array("login"=>$login, "password"=>$password);
 
@@ -54,11 +54,11 @@ class CControllerClient
 		}
 		elseif(
 			COption::GetOptionString("main", "auth_controller_sso", "N")=="Y"
-			&& strpos($arParams["LOGIN"], "\\") > 0
+			&& mb_strpos($arParams["LOGIN"], "\\") > 0
 		)
 		{
-			$site = substr($arParams["LOGIN"], 0, strpos($arParams["LOGIN"], "\\"));
-			$login = substr($arParams["LOGIN"], strpos($arParams["LOGIN"], "\\")+1);
+			$site = mb_substr($arParams["LOGIN"], 0, mb_strpos($arParams["LOGIN"], "\\"));
+			$login = mb_substr($arParams["LOGIN"], mb_strpos($arParams["LOGIN"], "\\") + 1);
 			$password = $arParams["PASSWORD"];
 			$arVars = array("login"=>$login, "password"=>$password, "site"=>$site);
 
@@ -78,16 +78,16 @@ class CControllerClient
 		}
 		elseif(
 			COption::GetOptionString("controller", "auth_controller_enabled", "N") === "Y"
-			&& strpos($arParams["LOGIN"], "\\") > 0
+			&& mb_strpos($arParams["LOGIN"], "\\") > 0
 			&& CModule::IncludeModule("controller")
 		)
 		{
-			$site = substr($arParams["LOGIN"], 0, strpos($arParams["LOGIN"], "\\"));
-			$login = substr($arParams["LOGIN"], strpos($arParams["LOGIN"], "\\")+1);
+			$site = mb_substr($arParams["LOGIN"], 0, mb_strpos($arParams["LOGIN"], "\\"));
+			$login = mb_substr($arParams["LOGIN"], mb_strpos($arParams["LOGIN"], "\\") + 1);
 			$password = $arParams["PASSWORD"];
 
-			$url = strtolower(trim($site, " \t\r\n./"));
-			if(substr($url, 0, 7) != "http://" && substr($url, 0, 8) != "https://")
+			$url = mb_strtolower(trim($site, " \t\r\n./"));
+			if(mb_substr($url, 0, 7) != "http://" && mb_substr($url, 0, 8) != "https://")
 				$url = array("http://".$url, "https://".$url);
 
 			$dbr_mem = CControllerMember::GetList(
@@ -102,7 +102,7 @@ class CControllerClient
 			if(!$ar_mem)
 				return false;
 
-			$arGroupsMap = unserialize(COption::GetOptionString("controller", "auth_controller", serialize(array())));
+			$arGroupsMap = unserialize(COption::GetOptionString("controller", "auth_controller", serialize(array())), ['allowed_classes' => false]);
 			$res = CControllerMember::CheckUserAuth($ar_mem["ID"], $login, $password, $arGroupsMap);
 
 			if(!is_array($res))
@@ -122,13 +122,13 @@ class CControllerClient
 		}
 
 		////////////////////////////////////////////////////////
-		/// СЃСЂР°РІРЅРёРІР°С‚СЊ РЅРµ РїСЂРѕСЃС‚Рѕ Р»РѕРіРёРЅ, Р° РїРѕР»РЅРѕСЃС‚СЊСЋ\Р»РѕРіРёРЅ
+		/// сравнивать не просто логин, а полностью\логин
 		/////////////////////////
-		if(is_array($arUser) && strtolower($arUser['LOGIN']) == strtolower($login))
+		if(is_array($arUser) && mb_strtolower($arUser['LOGIN']) == mb_strtolower($login))
 		{
 			//When user did not fill any inforamtion about
 			//we'll use first part of his e-mail like login
-			if(strlen($arUser["NAME"]) == 0 && strlen($arUser["SECOND_NAME"]) == 0)
+			if($arUser["NAME"] == '' && $arUser["SECOND_NAME"] == '')
 			{
 				if(preg_match("/^(.+)@/", $arUser["LOGIN"], $match))
 					$arUser["NAME"] = $match[1];
@@ -200,7 +200,7 @@ class CControllerClient
 			$arFields["PERSONAL_BIRTHDAY"] = $DB->FormatDate($arFields["PERSONAL_BIRTHDAY"], $FORMAT_DATE, FORMAT_DATE);
 		}
 
-		$dbr_user = CUser::GetList($O = '', $B = '', array(
+		$dbr_user = CUser::GetList('', '', array(
 			"LOGIN_EQUAL_EXACT" => $arFields["LOGIN"],
 			"EXTERNAL_AUTH_ID" => "__controller",
 		));
@@ -408,7 +408,7 @@ class CControllerClient
 		if(COption::GetOptionString("main", "controller_member", "N")=="Y")
 			return false;
 
-		if(strlen($arMemberParams["URL"])<=0)
+		if($arMemberParams["URL"] == '')
 			$arMemberParams["URL"] = $_SERVER['HTTP_HOST'];
 
 		list($member_id, $member_secret_id, $ticket_id) = CControllerClient::InitTicket($controller_url);
@@ -512,22 +512,33 @@ class CControllerClient
 
 	public static function ExecuteEvent($eventName, $arParams = array())
 	{
+		global $APPLICATION;
 		if(COption::GetOptionString("main", "controller_member", "N") != "Y")
 		{
 			return null;
 		}
 		else
 		{
+			$APPLICATION->ResetException();
 			$oRequest = new CControllerClientRequestTo("execute_event", array(
 				"event_name" => $eventName,
 				"parameters" => $arParams,
 			));
 			$oResponse = $oRequest->SendWithCheck();
 
-			if($oResponse == false)
-				error_log("CControllerClient::ExecuteEvent: unknown error");
-			elseif(!$oResponse->OK())
-				error_log("CControllerClient::ExecuteEvent: ".$oResponse->text);
+			if ($oResponse == false || !$oResponse->OK())
+			{
+				$e = $APPLICATION? $APPLICATION->GetException(): false;
+				if (is_object($e))
+					$errorMessage = $e->GetString();
+				elseif ($oResponse && $oResponse->text)
+					$errorMessage = $oResponse->text;
+				elseif ($oResponse)
+					$errorMessage = "http headers: [".$oResponse->httpHeaders."]";
+				else
+					$errorMessage = "unknown error";
+				error_log("CControllerClient::ExecuteEvent($eventName): ".$errorMessage);
+			}
 
 			return $oResponse->arParameters['result'];
 		}
@@ -536,7 +547,7 @@ class CControllerClient
 	public static function Unlink()
 	{
 		$disconnect_command = COption::GetOptionString("main", "~controller_disconnect_command", "");
-		if(strlen($disconnect_command)>0)
+		if($disconnect_command <> '')
 			eval($disconnect_command);
 		COption::SetOptionString("main", "controller_member", "N");
 	}
@@ -545,7 +556,7 @@ class CControllerClient
 	{
 		static $arCachedData;
 		if(!isset($arCachedData) || $bRefresh)
-			$arCachedData = unserialize(COption::GetOptionString("main", "~controller_backup", ""));
+			$arCachedData = unserialize(COption::GetOptionString("main", "~controller_backup", ""), ['allowed_classes' => false]);
 
 		return $arCachedData;
 	}
@@ -928,7 +939,7 @@ class __CControllerPacket
 	{
 		if (CheckSerializedData($parameters))
 		{
-			$arParameters = unserialize($parameters);
+			$arParameters = unserialize($parameters, ['allowed_classes' => false]);
 			if ($encoding)
 			{
 				if (array_key_exists("file", $arParameters))
@@ -960,28 +971,7 @@ class __CControllerPacket
 	 */
 	protected function _decode(&$arParameters, $encodingFrom ,$encodingTo)
 	{
-		global $APPLICATION;
-
-		if (is_array($arParameters))
-		{
-			$res = array();
-			foreach ($arParameters as $key => $value)
-			{
-				if (is_string($key))
-				{
-					$key = $APPLICATION->ConvertCharset($key, $encodingFrom, $encodingTo);
-				}
-
-				$this->_decode($value, $encodingFrom, $encodingTo);
-
-				$res[$key] = $value;
-			}
-			$arParameters = $res;
-		}
-		elseif (is_string($arParameters))
-		{
-			$arParameters = $APPLICATION->ConvertCharset($arParameters, $encodingFrom, $encodingTo);
-		}
+		$arParameters = \Bitrix\Main\Text\Encoding::convertEncoding($arParameters, $encodingFrom, $encodingTo);
 	}
 
 	/**
@@ -1019,7 +1009,7 @@ class __CControllerPacket
 	 *
 	 * @return boolean
 	 */
-	public function Sign()
+	function Sign()
 	{
 		$hash = implode("|", func_get_args());
 		$this->hash = md5($hash);
@@ -1028,15 +1018,15 @@ class __CControllerPacket
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
-// Р‘Р°Р·РѕРІС‹Р№ РєР»Р°СЃСЃ РґР»СЏ РєР»Р°СЃСЃРѕРІ С‚РёРїР° Request:
+// Базовый класс для классов типа Request:
 //
-// Р”Р»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ РЅР° РєРѕРЅС‚СЂРѕР»Р»РµСЂРµ:
-// CControllerServerRequestTo - РљР»Р°СЃСЃ РґР»СЏ РѕС‚РїСЂР°РІРєРё Р·Р°РїСЂРѕСЃР° РєР»РёРµРЅС‚Сѓ
-// CControllerServerRequestFrom - РљР»Р°СЃСЃ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ Р·Р°РїСЂРѕСЃР° РѕС‚ РєР»РёРµРЅС‚Р°
+// Для использования на контроллере:
+// CControllerServerRequestTo - Класс для отправки запроса клиенту
+// CControllerServerRequestFrom - Класс для получения запроса от клиента
 //
-// Р”Р»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ РЅР° РєР»РёРµРЅС‚Рµ:
-// CControllerClientRequestTo - РљР»Р°СЃСЃ РґР»СЏ РѕС‚РїСЂР°РІРєРё Р·Р°РїСЂРѕСЃР° РЅР° СЃРµСЂРІРµСЂ
-// CControllerClientRequestFrom - РљР»Р°СЃСЃ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ Р·Р°РїСЂРѕСЃР° РѕС‚ СЃРµСЂРІРµСЂР°
+// Для использования на клиенте:
+// CControllerClientRequestTo - Класс для отправки запроса на сервер
+// CControllerClientRequestFrom - Класс для получения запроса от сервера
 ///////////////////////////////////////////////////////////////////////////////////////////
 class __CControllerPacketRequest extends __CControllerPacket
 {
@@ -1044,10 +1034,10 @@ class __CControllerPacketRequest extends __CControllerPacket
 	protected $hostname = '';
 
 	///////////////////////////////////
-	//Р”Р»СЏ СЂР°Р±РѕС‚Рµ РІ РєР»Р°СЃСЃР°С… РїРѕР»СѓС‡Р°СЋС‰РёС… СЂРµР·СѓР»СЊС‚Р°С‚С‹ (CControllerClientRequestFrom, CControllerServerRequestFrom):
+	//Для работе в классах получающих результаты (CControllerClientRequestFrom, CControllerServerRequestFrom):
 	///////////////////////////////////
 
-	// Р·Р°РїРѕР»РЅСЏРµС‚ РѕР±СЉРµРєС‚ РїРµСЂРµРјРµРЅРЅС‹РјРё, РїСЂРёС€РµРґС€РёРјРё РІ $_REQUEST
+	// заполняет объект переменными, пришедшими в $_REQUEST
 	public function InitFromRequest()
 	{
 		$this->member_id = $_REQUEST['member_id'];
@@ -1098,13 +1088,13 @@ class __CControllerPacketRequest extends __CControllerPacket
 	 *
 	 * @return boolean
 	 **/
-	static public function Internal()
+	public function Internal()
 	{
 		return (count($_POST)>0);
 	}
 
 	///////////////////////////////////////
-	// Р”Р»СЏ СЂР°Р±РѕС‚С‹ РІ РєР»Р°СЃСЃР°С… РѕС‚РїСЂР°РІР»СЏСЋС‰РёС… Р·Р°РїСЂРѕСЃС‹ (CControllerClientRequestTo, CControllerServerRequestTo):
+	// Для работы в классах отправляющих запросы (CControllerClientRequestTo, CControllerServerRequestTo):
 	///////////////////////////////////////
 
 	/**
@@ -1139,7 +1129,7 @@ class __CControllerPacketRequest extends __CControllerPacket
 	 **/
 	public function RedirectRequest($url)
 	{
-		if(strpos($url, "?")>0)
+		if(mb_strpos($url, "?") > 0)
 			$url .= '&';
 		else
 			$url .= '?';
@@ -1171,29 +1161,34 @@ class __CControllerPacketRequest extends __CControllerPacket
 		global $APPLICATION;
 
 		$server_port = 80;
-		$server_name = strtolower(trim($url, "/ \r\n\t"));
-		if (substr($server_name, 0, 7)=='http://')
+		$server_name = mb_strtolower(trim($url, "/ \r\n\t"));
+		if (mb_substr($server_name, 0, 7) == 'http://')
 		{
-			$server_name = substr($server_name, 7);
+			$server_name = mb_substr($server_name, 7);
 		}
-		elseif (substr($server_name, 0, 8)=='https://')
+		elseif (mb_substr($server_name, 0, 8) == 'https://')
 		{
-			$server_name = substr($server_name, 8);
+			$server_name = mb_substr($server_name, 8);
 			$server_port = 443;
 		}
 
 		if (preg_match('/.+:([0-9]+)$/', $server_name, $matches))
 		{
 			$server_port = $matches[1];
-			$server_name = substr($server_name, 0, 0 - strlen($server_port) - 1);
+			$server_name = mb_substr($server_name, 0, 0 - mb_strlen($server_port) - 1);
 		}
 
-		$proxy_url = COption::GetOptionString("main", "controller_proxy_url", "");
-		$proxy_port = COption::GetOptionString("main", "controller_proxy_port", "");
+		$proxy_url = CPageOption::GetOptionString("main", "controller_proxy_url", "");
+		$proxy_port = CPageOption::GetOptionString("main", "controller_proxy_port", "");
+		$bUseProxy = ($proxy_url <> '' && $proxy_port <> '');
+		if (!$bUseProxy)
+		{
+			$proxy_url = COption::GetOptionString("main", "controller_proxy_url", "");
+			$proxy_port = COption::GetOptionString("main", "controller_proxy_port", "");
+			$bUseProxy = ($proxy_url <> '' && $proxy_port <> '');
+		}
 
-		// СЃРѕРµРґРёРЅСЏРµРјСЃСЏ СЃ СѓРґР°Р»РµРЅРЅС‹Рј СЃРµСЂРІРµСЂРѕРј
-		$bUseProxy = (strlen($proxy_url) > 0 && strlen($proxy_port) > 0);
-
+		// соединяемся с удаленным сервером
 		if ($bUseProxy)
 		{
 			$proxy_port = intval($proxy_port);
@@ -1246,7 +1241,7 @@ class __CControllerPacketRequest extends __CControllerPacket
 
 			$proxy_user = COption::GetOptionString("main", "controller_proxy_user", "");
 			$proxy_password = COption::GetOptionString("main", "controller_proxy_password", "");
-			if (strlen($proxy_user) > 0)
+			if ($proxy_user <> '')
 			{
 				$strRequest .= "Proxy-Authorization: Basic ".base64_encode($proxy_user.":".$proxy_password)."\r\n";
 			}
@@ -1260,7 +1255,7 @@ class __CControllerPacketRequest extends __CControllerPacket
 		$strRequest .= "Host: ".$server_name."\r\n";
 		$strRequest .= "Accept-Language: en\r\n";
 		$strRequest .= "Content-type: application/x-www-form-urlencoded\r\n";
-		$strRequest .= "Content-length: ".strlen($strVars)."\r\n\r\n";
+		$strRequest .= "Content-length: ".mb_strlen($strVars)."\r\n\r\n";
 		$strRequest .= $strVars."\r\n";
 
 		if ($this->isDebugEnabled())
@@ -1290,6 +1285,7 @@ class __CControllerPacketRequest extends __CControllerPacket
 		fclose($conn);
 
 		$packet_result = new __CControllerPacketResponse();
+		$packet_result->httpHeaders = $header;
 		$packet_result->secret_id = $this->secret_id;
 		$packet_result->ParseResult($result);
 
@@ -1310,21 +1306,23 @@ class __CControllerPacketRequest extends __CControllerPacket
 }
 
 /////////////////////////////////////////////////////////
-// Р‘Р°Р·РѕРІС‹Р№ РєР»Р°СЃСЃ РґР»СЏ РєР»Р°СЃСЃРѕРІ С‚РёРїР° Response:
+// Базовый класс для классов типа Response:
 //
-// Р”Р»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ РЅР° РєРѕРЅС‚СЂРѕР»Р»РµСЂРµ:
-// CControllerServerResponseFrom - РљР»Р°СЃСЃ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ РѕС‚РІРµС‚Р° РєР»РёРµРЅС‚Р° РЅР° СЃРµСЂРІРµСЂРµ
-// CControllerServerResponseTo - РљР»Р°СЃСЃ РґР»СЏ РѕС‚РїСЂР°РІРєРё СЂРµР·СѓР»СЊС‚Р°С‚РѕРІ РІС‹РїРѕР»РЅРµРЅРёСЏ Р·Р°РїСЂРѕСЃР° РЅР°Р·Р°Рґ РЅР° РєР»РёРµРЅС‚Р°
+// Для использования на контроллере:
+// CControllerServerResponseFrom - Класс для получения ответа клиента на сервере
+// CControllerServerResponseTo - Класс для отправки результатов выполнения запроса назад на клиента
 //
-// Р”Р»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ РЅР° РєР»РёРµРЅС‚Рµ:
-// CControllerClientResponseFrom - РљР»Р°СЃСЃ РґР»СЏ РїРѕР»СѓС‡РµРЅРёСЏ РѕС‚РІРµС‚Р° РєРѕРЅС‚СЂРѕР»Р»РµСЂР° РЅР° РєР»РёРµРЅС‚Рµ
-// CControllerClientResponseTo - РљР»Р°СЃСЃ РґР»СЏ РѕС‚РїСЂР°РІРєРё СЂРµР·СѓР»СЊС‚Р°С‚РѕРІ РІС‹РїРѕР»РЅРµРЅРёСЏ Р·Р°РїСЂРѕСЃР° РЅР°Р·Р°Рґ РЅР° РєРѕРЅС‚СЂРѕР»Р»РµСЂ
+// Для использования на клиенте:
+// CControllerClientResponseFrom - Класс для получения ответа контроллера на клиенте
+// CControllerClientResponseTo - Класс для отправки результатов выполнения запроса назад на контроллер
 //////////////////////////////////////////////////////////
 class __CControllerPacketResponse extends __CControllerPacket
 {
-	var $status, $text;
+	public $httpHeaders;
+	public $status;
+	public $text;
 
-	public function _InitFromRequest($oPacket, $arExclude = array('operation', 'arParameters'))
+	function _InitFromRequest($oPacket, $arExclude = array('operation', 'arParameters'))
 	{
 		if (is_object($oPacket))
 		{
@@ -1340,7 +1338,7 @@ class __CControllerPacketResponse extends __CControllerPacket
 	}
 
 	//////////////////////////////////////////////
-	// РњРµС‚РѕРґС‹ РґР»СЏ СЂР°Р±РѕС‚С‹ РІ РєР»Р°СЃСЃР°С… РїСЂРёРЅРёРјР°СЋС‰РёС… СЂРµР·СѓР»СЊС‚Р°С‚ (CControllerServerResponseFrom, CControllerClientResponseFrom):
+	// Методы для работы в классах принимающих результат (CControllerServerResponseFrom, CControllerClientResponseFrom):
 	//////////////////////////////////////////////
 
 	/**
@@ -1349,7 +1347,7 @@ class __CControllerPacketResponse extends __CControllerPacket
 	 * @return boolean
 	 * @see __CControllerPacket::Check
 	 */
-	public function Check()
+	function Check()
 	{
 		return parent::Check($this->status, $this->text, $this->strParameters, $this->secret_id);
 	}
@@ -1359,22 +1357,20 @@ class __CControllerPacketResponse extends __CControllerPacket
 	 *
 	 * @return void
 	 */
-	public function Sign()
+	function Sign()
 	{
 		parent::Sign($this->status, $this->text, serialize($this->arParameters), $this->secret_id);
 	}
 
-	// Р’РѕР·РІСЂР°С‰Р°РµС‚ СѓСЃРїРµС€РЅРѕ Р»Рё РІС‹РїРѕР»РЅРёР»СЃСЏ Р·Р°РїСЂРѕСЃ РїРѕ СЃС‚Р°С‚СѓСЃ РµРіРѕ РѕС‚РІРµС‚Р°
-	public function OK()
+	// Возвращает успешно ли выполнился запрос по статус его ответа
+	function OK()
 	{
-		return (substr($this->status, 0, 1)=="2");
+		return (mb_substr($this->status, 0, 1) == "2");
 	}
 
-	// Р Р°Р·Р±РёСЂР°РµС‚ СЃС‚СЂРѕРєСѓ РѕС‚РІРµС‚Р° РїРѕ РїРѕР»СЏРј РѕР±СЉРµРєС‚Р°
-	public function ParseResult($result)
+	// Разбирает строку ответа по полям объекта
+	function ParseResult($result)
 	{
-		global $APPLICATION;
-
 		$ar_result = array();
 		$pairs = explode('&', trim($result, " \n\r\t"));
 		foreach ($pairs as $pair)
@@ -1399,31 +1395,31 @@ class __CControllerPacketResponse extends __CControllerPacket
 			$this->arParameters = $arParameters;
 			if (isset($ar_result['encoding']))
 			{
-				if($this->text && is_object($APPLICATION))
-					$this->text = $APPLICATION->ConvertCharset($this->text, $this->encoding, SITE_CHARSET);
+				if($this->text)
+					$this->text = \Bitrix\Main\Text\Encoding::convertEncoding($this->text, $this->encoding, SITE_CHARSET);
 			}
 		}
 
 		$this->version = $ar_result['version'];
 
 		if (
-			strlen($this->status) <= 0
-			&& strlen($this->text) <= 0
-			&& strlen($this->member_id) <= 0
+			$this->status == ''
+			&& $this->text == ''
+			&& $this->member_id == ''
 		)
 		{
 			$this->status = "479";
-			$this->text = GetMessage("MAIN_CMEMBER_ERR7")." ".substr($result, 0, 1000);
+			$this->text = GetMessage("MAIN_CMEMBER_ERR7")." ".mb_substr($result, 0, 1000);
 		}
 	}
 
 
 	///////////////////////////////////////
-	// Р‘Р°Р·РѕРІС‹Рµ РјРµС‚РѕРґС‹ РґР»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ РІ РєР»Р°СЃСЃР°С… РѕС‚РїСЂР°РІР»СЏСЋС‰РёС… СЂРµР·СѓР»СЊС‚Р°С‚ (CControllerServerResponseTo, CControllerClientResponseTo):
+	// Базовые методы для использования в классах отправляющих результат (CControllerServerResponseTo, CControllerClientResponseTo):
 	///////////////////////////////////////
 
-	// РІРѕР·РІСЂР°С‰Р°РµС‚ РѕС‚С„РѕСЂРјР°С‚РёСЂРѕРІР°РЅРЅСѓСЋ СЃС‚СЂРѕРєСѓ РѕС‚РІРµС‚Р° РІ С„РѕСЂРјР°С‚Рµ РїРѕРЅСЏС‚РЅРѕРј РґР»СЏ РїСЂРёРµРјР° РЅР° СЃРµСЂРІРµСЂРµ, СЃ РїРѕРґРїРёСЃСЊСЋ
-	public function GetResponseBody($log = false)
+	// возвращает отформатированную строку ответа в формате понятном для приема на сервере, с подписью
+	function GetResponseBody($log = false)
 	{
 		$result = "status=".urlencode($this->status).
 			"&text=".urlencode($this->text).
@@ -1450,8 +1446,8 @@ class __CControllerPacketResponse extends __CControllerPacket
 		return $result;
 	}
 
-	// РѕС‚РїСЂР°РІР»СЏРµС‚ РѕС‚РІРµС‚ РѕР±СЂР°С‚РЅРѕ
-	public function Send()
+	// отправляет ответ обратно
+	function Send()
 	{
 		if ($this->isDebugEnabled())
 		{
@@ -1469,7 +1465,7 @@ class __CControllerPacketResponse extends __CControllerPacket
 	}
 }
 
-// РљР»Р°СЃСЃ РґР»СЏ РѕС‚РїСЂР°РІРєРё Р·Р°РїСЂРѕСЃР° РЅР° СЃРµСЂРІРµСЂ
+// Класс для отправки запроса на сервер
 class CControllerClientRequestTo extends __CControllerPacketRequest
 {
 	var $debug_const = "CONTROLLER_CLIENT_DEBUG";
@@ -1484,7 +1480,7 @@ class CControllerClientRequestTo extends __CControllerPacketRequest
 		$this->session_id = \Bitrix\Main\Security\Random::getString(32);
 	}
 
-	public function SendWithCheck($page="/bitrix/admin/controller_ws.php")
+	function SendWithCheck($page="/bitrix/admin/controller_ws.php")
 	{
 		$oResponse = $this->Send("", $page);
 		if($oResponse===false)
@@ -1516,7 +1512,7 @@ class CControllerClientRequestTo extends __CControllerPacketRequest
 }
 
 
-// РљР»Р°СЃСЃ РїРѕР»СѓС‡РµРЅРёСЏ СЂРµР·СѓР»СЊС‚Р°С‚Р° РЅР° РєР»РёРµРЅС‚Рµ (РѕС‚ РєРѕРЅС‚СЂРѕР»Р»РµСЂР°)
+// Класс получения результата на клиенте (от контроллера)
 class CControllerClientResponseFrom extends __CControllerPacketResponse
 {
 	var $debug_const = "CONTROLLER_CLIENT_DEBUG";
@@ -1543,10 +1539,10 @@ class CControllerClientRequestFrom extends __CControllerPacketRequest
 		));
 	}
 
-	public function Check()
+	function Check()
 	{
 		$member_id = COption::GetOptionString("main", "controller_member_id", "");
-		if(strlen($member_id)<=0 || $member_id != $this->member_id)
+		if($member_id == '' || $member_id != $this->member_id)
 		{
 			$e = new CApplicationException("Bad member_id: ((get)".$member_id."!=(own)".$this->member_id.")");
 			$GLOBALS["APPLICATION"]->ThrowException($e);
@@ -1562,7 +1558,7 @@ class CControllerClientRequestFrom extends __CControllerPacketRequest
 }
 
 
-// РљР»Р°СЃСЃ РґР»СЏ РѕС‚СЃС‹Р»РєРё РѕС‚РІРµС‚Р° РЅР° СЃРµСЂРІРµСЂ
+// Класс для отсылки ответа на сервер
 class CControllerClientResponseTo extends __CControllerPacketResponse
 {
 	var $debug_const = "CONTROLLER_CLIENT_DEBUG";
@@ -1578,7 +1574,7 @@ class CControllerTools
 {
 	public static function PackFileArchive($path)
 	{
-		include_once(dirname(__FILE__) . '/tar_gz.php');
+		include_once(__DIR__ . '/tar_gz.php');
 
 		if (file_exists($path))
 		{
@@ -1609,7 +1605,7 @@ class CControllerTools
 
 		if(file_put_contents($arcname, $strfile) !== false)
 		{
-			include_once(dirname(__FILE__) . '/tar_gz.php');
+			include_once(__DIR__ . '/tar_gz.php');
 			$ob = new CArchiver($arcname);
 
 			CheckDirPath($_SERVER['DOCUMENT_ROOT'].$path_to);
