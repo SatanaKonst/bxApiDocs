@@ -6,7 +6,11 @@
  * @copyright 2001-2014 Bitrix
  */
 
-require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/classes/general/database.php");
+use Bitrix\Main;
+use Bitrix\Main\DB\SqlExpression;
+use Bitrix\Main\Context;
+
+require_once __DIR__."/../general/database.php";
 
 /********************************************************************
 *	MySQL database classes
@@ -14,6 +18,8 @@ require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/classes/general/dat
 abstract class CDatabaseMysql extends CAllDatabase
 {
 	var $version;
+
+	public $type = "MYSQL";
 
 	public
 		$escL = '`',
@@ -44,36 +50,42 @@ abstract class CDatabaseMysql extends CAllDatabase
 
 	public function StartTransaction()
 	{
-		$this->Query("START TRANSACTION");
+		$this->DoConnect();
+		$this->connection->startTransaction();
 	}
 
 	public function Commit()
 	{
-		$this->Query("COMMIT", true);
+		$this->DoConnect();
+		$this->connection->commitTransaction();
 	}
 
 	public function Rollback()
 	{
-		$this->Query("ROLLBACK", true);
+		$this->DoConnect();
+		$this->connection->rollbackTransaction();
 	}
 
-	//Connect to database
 	public function Connect($DBHost, $DBName, $DBLogin, $DBPassword, $connectionName = "")
 	{
-		$this->type = "MYSQL";
 		$this->DBHost = $DBHost;
 		$this->DBName = $DBName;
 		$this->DBLogin = $DBLogin;
 		$this->DBPassword = $DBPassword;
-		$this->bConnected = false;
 
 		if (!defined("DBPersistent"))
-			// define("DBPersistent",true);
+		{
+			define("DBPersistent", true);
+		}
 
-		if(defined("DELAY_DB_CONNECT") && DELAY_DB_CONNECT===true)
+		if (defined("DELAY_DB_CONNECT") && DELAY_DB_CONNECT === true)
+		{
 			return true;
+		}
 		else
+		{
 			return $this->DoConnect($connectionName);
+		}
 	}
 
 	abstract protected function QueryInternal($sql);
@@ -94,7 +106,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		//and when there is no one we can choose
 		//to run query against master connection
 		//or replicated one
-		$connectionPool = \Bitrix\Main\Application::getInstance()->getConnectionPool();
+		$connectionPool = Main\Application::getInstance()->getConnectionPool();
 
 		if($connectionPool->isMasterOnly())
 		{
@@ -178,27 +190,43 @@ abstract class CDatabaseMysql extends CAllDatabase
 			$this->db_ErrorSQL = $strSql;
 			if(!$bIgnoreErrors)
 			{
-				AddMessage2Log($error_position." MySql Query Error: ".$strSql." [".$this->db_Error."]", "main");
-				if ($this->DebugToFile)
+				$application = Main\Application::getInstance();
+
+				$ex = new Main\DB\SqlQueryException('Mysql query error', $this->db_Error, $strSql);
+				$application->getExceptionHandler()->writeToLog($ex);
+
+				(new Main\HttpResponse())
+					->setStatus('500 Internal Server Error')
+					->writeHeaders()
+				;
+
+        		if ($this->DebugToFile)
+				{
 					$this->startSqlTracker()->writeFileLog("ERROR: ".$this->db_Error, 0, "CONN: ".$this->getThreadId());
+				}
 
-				if($this->debug || (isset($_SESSION["SESS_AUTH"]["ADMIN"]) && $_SESSION["SESS_AUTH"]["ADMIN"]))
+				if($this->debug)
+				{
 					echo $error_position."<br><font color=#ff0000>MySQL Query Error: ".htmlspecialcharsbx($strSql)."</font>[".htmlspecialcharsbx($this->db_Error)."]<br>";
+				}
 
-				$error_position = preg_replace("#<br[^>]*>#i","\n",$error_position);
+				$error_position = preg_replace("#<br[^>]*>#i","\n", $error_position);
 				SendError($error_position."\nMySQL Query Error:\n".$strSql." \n [".$this->db_Error."]\n---------------\n\n");
 
 				if(file_exists($_SERVER["DOCUMENT_ROOT"].BX_PERSONAL_ROOT."/php_interface/dbquery_error.php"))
+				{
 					include($_SERVER["DOCUMENT_ROOT"].BX_PERSONAL_ROOT."/php_interface/dbquery_error.php");
-				elseif(file_exists($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/dbquery_error.php"))
-					include($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/dbquery_error.php");
+					die();
+				}
 				else
+				{
 					die("MySQL Query Error!");
+				}
 
-				die();
 			}
 			return false;
 		}
+
 
 		$res = new CDBResult($result);
 		$res->DB = $this;
@@ -207,41 +235,22 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return $res;
 	}
 
+	/**
+	 * @deprecated Not used.
+	 * @param $resource
+	 * @return mixed
+	 */
 	abstract protected function DisconnectInternal($resource);
 
-	//Closes database connection
+	/**
+	 * Closes database connection.
+	 * @deprecated Use D7 connections.
+	 */
 	public function Disconnect()
 	{
-		if(!DBPersistent && $this->bConnected)
+		if ($this->connection)
 		{
-			$this->bConnected = false;
-
-			if (!$this->bNodeConnection)
-			{
-				$fl = true;
-				$app = \Bitrix\Main\Application::getInstance();
-				if ($app != null)
-				{
-					$con = $app->getConnection();
-					if ($con->isConnected())
-					{
-						$con->disconnect();
-						$fl = false;
-					}
-				}
-
-				if ($fl)
-					$this->DisconnectInternal($this->db_Conn);
-			}
-		}
-
-		foreach(self::$arNodes as $i => $arNode)
-		{
-			if(is_array($arNode) && array_key_exists("DB", $arNode))
-			{
-				$this->DisconnectInternal($arNode["DB"]->db_Conn);
-				unset(self::$arNodes[$i]["DB"]);
-			}
+			$this->connection->disconnect();
 		}
 	}
 
@@ -255,7 +264,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return "CURRENT_DATE";
 	}
 
-	public static function DateFormatToDB($format, $field = false)
+	public function DateFormatToDB($format, $field = false)
 	{
 		static $search  = array(
 			"YYYY",
@@ -284,18 +293,18 @@ abstract class CDatabaseMysql extends CAllDatabase
 
 		$format = str_replace($search, $replace, $format);
 
-		if (strpos($format, '%H') === false)
+		if (mb_strpos($format, '%H') === false)
 		{
 			$format = str_replace("H", "%h", $format);
 		}
 
-		if (strpos($format, '%M') === false)
+		if (mb_strpos($format, '%M') === false)
 		{
 			$format = str_replace("M", "%b", $format);
 		}
 
 		$lowerAmPm = false;
-		if(strpos($format, 'T') !== false)
+		if(mb_strpos($format, 'T') !== false)
 		{
 			//lowercase am/pm
 			$lowerAmPm = true;
@@ -322,7 +331,15 @@ abstract class CDatabaseMysql extends CAllDatabase
 		$id = $strType.",".$lang.",".$bSearchInSitesOnly;
 		if(!isset($CACHE[$id]))
 		{
-			$CACHE[$id] = $this->DateFormatToDB(CLang::GetDateFormat($strType, $lang, $bSearchInSitesOnly), false);
+			if ($lang === false && ($context = Context::getCurrent()) && ($culture = $context->getCulture()) !== null)
+			{
+				$format = ($strType == "FULL" ? $culture->getFormatDatetime() : $culture->getFormatDate());
+			}
+			else
+			{
+				$format = CLang::GetDateFormat($strType, $lang, $bSearchInSitesOnly);
+			}
+			$CACHE[$id] = $this->DateFormatToDB($format);
 		}
 
 		$sFieldExpr = $strFieldName;
@@ -330,9 +347,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		//time zone
 		if($strType == "FULL" && CTimeZone::Enabled())
 		{
-			static $diff = false;
-			if($diff === false)
-				$diff = CTimeZone::GetOffset();
+			$diff = CTimeZone::GetOffset();
 
 			if($diff <> 0)
 				$sFieldExpr = "DATE_ADD(".$strFieldName.", INTERVAL ".$diff." SECOND)";
@@ -341,16 +356,31 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return str_replace("#FIELD#", $sFieldExpr, $CACHE[$id]);
 	}
 
-	public static function CharToDateFunction($strValue, $strType="FULL", $lang=false)
+	public function CharToDateFunction($strValue, $strType="FULL", $lang=false)
 	{
-		$sFieldExpr = "'".CDatabase::FormatDate($strValue, CLang::GetDateFormat($strType, $lang), ($strType=="SHORT"? "YYYY-MM-DD":"YYYY-MM-DD HH:MI:SS"))."'";
+		// get user time
+		if ($strValue instanceof Main\Type\DateTime && !$strValue->isUserTimeEnabled())
+		{
+			$strValue = clone $strValue;
+			$strValue->toUserTime();
+		}
+
+		// format
+		if ($lang === false && ($context = Context::getCurrent()) && ($culture = $context->getCulture()) !== null)
+		{
+			$format = ($strType == "FULL" ? $culture->getFormatDatetime() : $culture->getFormatDate());
+		}
+		else
+		{
+			$format = CLang::GetDateFormat($strType, $lang);
+		}
+
+		$sFieldExpr = "'".CDatabase::FormatDate($strValue, $format, ($strType=="SHORT"? "YYYY-MM-DD":"YYYY-MM-DD HH:MI:SS"))."'";
 
 		//time zone
 		if($strType == "FULL" && CTimeZone::Enabled())
 		{
-			static $diff = false;
-			if($diff === false)
-				$diff = CTimeZone::GetOffset();
+			$diff = CTimeZone::GetOffset();
 
 			if($diff <> 0)
 				$sFieldExpr = "DATE_ADD(".$sFieldExpr.", INTERVAL -(".$diff.") SECOND)";
@@ -359,7 +389,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return $sFieldExpr;
 	}
 
-	public static function DatetimeToTimestampFunction($fieldName)
+	public function DatetimeToTimestampFunction($fieldName)
 	{
 		$timeZone = "";
 		if (CTimeZone::Enabled())
@@ -374,7 +404,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return "UNIX_TIMESTAMP(".$fieldName.")".$timeZone;
 	}
 
-	public static function DatetimeToDateFunction($strValue)
+	public function DatetimeToDateFunction($strValue)
 	{
 		return 'DATE('.$strValue.')';
 	}
@@ -398,7 +428,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return $zr["RES"];
 	}
 
-	abstract function LastID();
+	abstract public function LastID();
 
 	public function PrepareFields($strTableName, $strPrefix = "str_", $strSuffix = "")
 	{
@@ -449,13 +479,13 @@ abstract class CDatabaseMysql extends CAllDatabase
 					{
 						case "datetime":
 						case "timestamp":
-							if(strlen($value)<=0)
+							if($value == '')
 								$strInsert2 .= ", NULL ";
 							else
 								$strInsert2 .= ", ".CDatabase::CharToDateFunction($value, "FULL", $lang);
 							break;
 						case "date":
-							if(strlen($value)<=0)
+							if($value == '')
 								$strInsert2 .= ", NULL ";
 							else
 								$strInsert2 .= ", ".CDatabase::CharToDateFunction($value, "SHORT", $lang);
@@ -464,7 +494,12 @@ abstract class CDatabaseMysql extends CAllDatabase
 							$strInsert2 .= ", '".intval($value)."'";
 							break;
 						case "real":
-							$strInsert2 .= ", '".doubleval($value)."'";
+							$value = doubleval($value);
+							if(!is_finite($value))
+							{
+								$value = 0;
+							}
+							$strInsert2 .= ", '".$value."'";
 							break;
 						default:
 							$strInsert2 .= ", '".$this->ForSql($value)."'";
@@ -480,8 +515,8 @@ abstract class CDatabaseMysql extends CAllDatabase
 
 		if($strInsert1!="")
 		{
-			$strInsert1 = substr($strInsert1, 2);
-			$strInsert2 = substr($strInsert2, 2);
+			$strInsert1 = mb_substr($strInsert1, 2);
+			$strInsert2 = mb_substr($strInsert2, 2);
 		}
 		return array($strInsert1, $strInsert2);
 	}
@@ -509,6 +544,10 @@ abstract class CDatabaseMysql extends CAllDatabase
 				{
 					$strUpdate .= ", $strTableAlias`".$strColumnName."` = NULL";
 				}
+				elseif ($value instanceof SqlExpression)
+				{
+					$strUpdate .= ", $strTableAlias`".$strColumnName."` = ".$value->compile();
+				}
 				else
 				{
 					switch ($type)
@@ -518,16 +557,20 @@ abstract class CDatabaseMysql extends CAllDatabase
 							break;
 						case "real":
 							$value = doubleval($value);
+							if(!is_finite($value))
+							{
+								$value = 0;
+							}
 							break;
 						case "datetime":
 						case "timestamp":
-							if(strlen($value)<=0)
+							if($value == '')
 								$value = "NULL";
 							else
 								$value = CDatabase::CharToDateFunction($value, "FULL", $lang);
 							break;
 						case "date":
-							if(strlen($value)<=0)
+							if($value == '')
 								$value = "NULL";
 							else
 								$value = CDatabase::CharToDateFunction($value, "SHORT", $lang);
@@ -545,7 +588,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		}
 
 		if($strUpdate!="")
-			$strUpdate = substr($strUpdate, 2);
+			$strUpdate = mb_substr($strUpdate, 2);
 
 		return $strUpdate;
 	}
@@ -560,13 +603,13 @@ abstract class CDatabaseMysql extends CAllDatabase
 		foreach ($arFields as $field => $value)
 		{
 			$str1 .= ($str1 <> ""? ", ":"")."`".$field."`";
-			if (strlen($value) <= 0)
+			if ((string)$value == '')
 				$str2 .= ($str2 <> ""? ", ":"")."''";
 			else
 				$str2 .= ($str2 <> ""? ", ":"").$value;
 		}
 
-		if (strlen($EXIST_ID)>0)
+		if ($EXIST_ID <> '')
 		{
 			$strSql = "INSERT INTO ".$table."(ID,".$str1.") VALUES ('".$this->ForSql($EXIST_ID)."',".$str2.")";
 		}
@@ -583,7 +626,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		if ($res === false)
 			return false;
 
-		if (strlen($EXIST_ID) > 0)
+		if ($EXIST_ID <> '')
 			return $EXIST_ID;
 		else
 			return $this->LastID();
@@ -597,7 +640,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 			$ar = array();
 			foreach($arFields as $field => $value)
 			{
-				if (strlen($value)<=0)
+				if ((string)$value == '')
 					$ar[] = "`".$field."` = ''";
 				else
 					$ar[] = "`".$field."` = ".$value."";
@@ -632,11 +675,11 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return $rows;
 	}
 
-	static public function Add($tablename, $arFields, $arCLOBFields = Array(), $strFileDir="", $ignore_errors=false, $error_position="", $arOptions=array())
+	public function Add($tablename, $arFields, $arCLOBFields = Array(), $strFileDir="", $ignore_errors=false, $error_position="", $arOptions=array())
 	{
 		global $DB;
 
-		if(!is_object($this) || !isset($this->type))
+		if(!isset($this) || !is_object($this) || !isset($this->type))
 		{
 			return $DB->Add($tablename, $arFields, $arCLOBFields, $strFileDir, $ignore_errors, $error_position, $arOptions);
 		}
@@ -651,7 +694,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		}
 	}
 
-	public static function TopSql($strSql, $nTopCount)
+	public function TopSql($strSql, $nTopCount)
 	{
 		$nTopCount = intval($nTopCount);
 		if($nTopCount>0)
@@ -660,7 +703,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 			return $strSql;
 	}
 
-	abstract function ForSqlLike($strValue, $iMaxLength = 0);
+	abstract public function ForSqlLike($strValue, $iMaxLength = 0);
 
 	public function InitTableVarsForEdit($tablename, $strIdentFrom="str_", $strIdentTo="str_", $strSuffixFrom="", $bAlways=false)
 	{
@@ -689,7 +732,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return array_keys($this->GetTableFields($table));
 	}
 
-	abstract function GetTableFields($table);
+	abstract public function GetTableFields($table);
 
 	public function LockTables($str)
 	{
@@ -702,26 +745,26 @@ abstract class CDatabaseMysql extends CAllDatabase
 		$this->Query("UNLOCK TABLES", true, '', array("fixed_connection"=>true));
 	}
 
-	public static function Concat()
+	public function Concat()
 	{
 		$str = "";
 		$ar = func_get_args();
 		if (is_array($ar)) $str .= implode(" , ", $ar);
-		if (strlen($str)>0) $str = "concat(".$str.")";
+		if ($str <> '') $str = "concat(".$str.")";
 		return $str;
 	}
 
-	public static function IsNull($expression, $result)
+	public function IsNull($expression, $result)
 	{
 		return "ifnull(".$expression.", ".$result.")";
 	}
 
-	public static function Length($field)
+	public function Length($field)
 	{
 		return "length($field)";
 	}
 
-	public static function ToChar($expr, $len=0)
+	public function ToChar($expr, $len=0)
 	{
 		return $expr;
 	}
@@ -731,7 +774,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		$tableName = preg_replace("/[^A-Za-z0-9%_]+/i", "", $tableName);
 		$tableName = Trim($tableName);
 
-		if (strlen($tableName) <= 0)
+		if ($tableName == '')
 			return False;
 
 		$dbResult = $this->Query("SHOW TABLES LIKE '".$this->ForSql($tableName)."'", false, '', array("fixed_connection"=>true));
@@ -766,7 +809,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 			}
 			else
 			{
-				if(substr($strKeyColumns, 0, strlen($strColumns)) === $strColumns)
+				if(mb_substr($strKeyColumns, 0, mb_strlen($strColumns)) === $strColumns)
 					return $Key_name;
 			}
 		}
@@ -774,7 +817,7 @@ abstract class CDatabaseMysql extends CAllDatabase
 		return "";
 	}
 
-	public static function Instr($str, $toFind)
+	public function Instr($str, $toFind)
 	{
 		return "INSTR($str, $toFind)";
 	}
@@ -784,13 +827,13 @@ abstract class CDatabaseMysql extends CAllDatabase
 
 abstract class CDBResultMysql extends CAllDBResult
 {
-	static public function __construct($res = null)
+	public function __construct($res = null)
 	{
 		parent::__construct($res);
 	}
 
 	/** @deprecated */
-	static public function CDBResultMysql($res = null)
+	public function CDBResultMysql($res = null)
 	{
 		self::__construct($res);
 	}
@@ -800,7 +843,7 @@ abstract class CDBResultMysql extends CAllDBResult
 	 *
 	 * @return array
 	 */
-	public function Fetch()
+	function Fetch()
 	{
 		global $DB;
 
@@ -858,7 +901,7 @@ abstract class CDBResultMysql extends CAllDBResult
 		return $res;
 	}
 
-	public function NavQuery($strSql, $cnt, $arNavStartParams, $bIgnoreErrors = false)
+	function NavQuery($strSql, $cnt, $arNavStartParams, $bIgnoreErrors = false)
 	{
 		global $DB;
 
@@ -890,19 +933,7 @@ abstract class CDBResultMysql extends CAllDBResult
 				$this->NavPageCount = 1;
 
 			//page number to display
-			$this->NavPageNomer =
-			(
-				$this->PAGEN < 1 || $this->PAGEN > $this->NavPageCount
-				?
-					($_SESSION[$this->SESS_PAGEN] < 1 || $_SESSION[$this->SESS_PAGEN] > $this->NavPageCount
-					?
-						$this->NavPageCount
-					:
-						$_SESSION[$this->SESS_PAGEN]
-					)
-				:
-					$this->PAGEN
-			);
+			$this->calculatePageNumber($this->NavPageCount);
 
 			//rows to skip
 			$NavFirstRecordShow = 0;
@@ -918,14 +949,11 @@ abstract class CDBResultMysql extends CAllDBResult
 				$this->NavPageCount++;
 
 			//calculate total pages depend on rows count. start with 1
-			if($this->PAGEN >= 1 && $this->PAGEN <= $this->NavPageCount)
-				$this->NavPageNomer = $this->PAGEN;
-			elseif($_SESSION[$this->SESS_PAGEN] >= 1 && $_SESSION[$this->SESS_PAGEN] <= $this->NavPageCount)
-				$this->NavPageNomer = $_SESSION[$this->SESS_PAGEN];
-			elseif($arNavStartParams["checkOutOfRange"] !== true)
-				$this->NavPageNomer = 1;
-			else
+			$this->calculatePageNumber(1, true, (bool)($arNavStartParams["checkOutOfRange"] ?? false));
+			if ($this->NavPageNomer === null)
+			{
 				return null;
+			}
 
 			//rows to skip
 			$NavFirstRecordShow = $this->NavPageSize*($this->NavPageNomer-1);
@@ -987,9 +1015,9 @@ abstract class CDBResultMysql extends CAllDBResult
 
 if(defined("BX_USE_MYSQLI") && BX_USE_MYSQLI === true)
 {
-	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/classes/mysql/database_mysqli.php");
+	require_once __DIR__."/database_mysqli.php";
 }
 else
 {
-	require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/classes/mysql/database_mysql.php");
+	require_once __DIR__."/database_mysql.php";
 }

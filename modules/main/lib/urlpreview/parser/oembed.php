@@ -3,11 +3,10 @@
 namespace Bitrix\Main\UrlPreview\Parser;
 
 use Bitrix\Main\Text\Encoding;
+use Bitrix\Main\UrlPreview\UrlPreview;
 use Bitrix\Main\Web\HttpClient;
-use Bitrix\Main\Web\Json;
 use Bitrix\Main\UrlPreview\HtmlDocument;
 use Bitrix\Main\UrlPreview\Parser;
-
 
 class Oembed extends Parser
 {
@@ -27,35 +26,37 @@ class Oembed extends Parser
 	 * Downloads and parses HTML's document metadata, formatted with oEmbed standard.
 	 *
 	 * @param HtmlDocument $document HTML document.
+	 * @param HttpClient|null $httpClient
 	 */
-	
-	/**
-	* <p>Нестатический метод загружает и парсит метаданные HTML документа, форматируя их по стандарту <b>oEmbed</b>.</p>
-	*
-	*
-	* @param mixed $Bitrix  HTML документ.
-	*
-	* @param Bitri $Main  
-	*
-	* @param Mai $UrlPreview  
-	*
-	* @param HtmlDocument $document  
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/urlpreview/parser/oembed/handle.php
-	* @author Bitrix
-	*/
-	public function handle(HtmlDocument $document)
+	public function handle(HtmlDocument $document, HttpClient $httpClient = null)
 	{
-		if(!$this->detectOembedLink($document) || strlen($this->metadataUrl) == 0)
+		if(!$this->detectOembedLink($document) || $this->metadataUrl == '')
 		{
 			return;
 		}
 
-		$httpClient = new HttpClient();
-		$rawMetadata = $httpClient->get($this->metadataUrl);
+		$isHttpClientPassed = true;
+		if(!$httpClient)
+		{
+			$httpClient = $this->initHttpClient();
+			$isHttpClientPassed = false;
+		}
+		$rawMetadata = $this->getRawMetaData($httpClient);
+		// if request was served through http - try to switch to https
+		if(
+			(
+				!$rawMetadata
+				|| $httpClient->getStatus() === 403
+			)
+			&& mb_strpos($this->metadataUrl, 'http://') === 0)
+		{
+			if(!$isHttpClientPassed)
+			{
+				$httpClient = $this->initHttpClient();
+			}
+			$metadataUrl = str_replace('http://', 'https://', $this->metadataUrl);
+			$rawMetadata = $httpClient->get($metadataUrl);
+		}
 
 		if($rawMetadata === false)
 		{
@@ -65,7 +66,7 @@ class Oembed extends Parser
 		$parsedMetadata = $this->parseMetadata($rawMetadata);
 		if($parsedMetadata !== false)
 		{
-			if(strlen($this->metadataEncoding) > 0 && $document->getEncoding() !== $this->metadataEncoding)
+			if($this->metadataEncoding <> '' && $document->getEncoding() !== $this->metadataEncoding)
 			{
 				$parsedMetadata = Encoding::convertEncoding($parsedMetadata, $this->metadataEncoding, $document->getEncoding());
 			}
@@ -84,6 +85,21 @@ class Oembed extends Parser
 			{
 				$document->setEmbed($parsedMetadata['html']);
 			}
+
+			if($document->getExtraField('PROVIDER_NAME') == '' && $parsedMetadata['provider_name'] != '')
+			{
+				$document->setExtraField('PROVIDER_NAME', $parsedMetadata['provider_name']);
+			}
+
+			if($document->getExtraField('VIDEO_WIDTH') == '' && $parsedMetadata['width'] != '')
+			{
+				$document->setExtraField('VIDEO_WIDTH', $parsedMetadata['width']);
+			}
+
+			if($document->getExtraField('VIDEO_HEIGHT') == '' && $parsedMetadata['height'] != '')
+			{
+				$document->setExtraField('VIDEO_HEIGHT', $parsedMetadata['height']);
+			}
 		}
 	}
 
@@ -97,14 +113,14 @@ class Oembed extends Parser
 
 		foreach($linkElements[0] as $linkElement)
 		{
-			$typeJson = (strpos($linkElement, $this::OEMBED_TYPE_JSON) !== false);
-			$typeXml = (strpos($linkElement, $this::OEMBED_TYPE_XML) !== false);
+			$typeJson = (mb_strpos($linkElement, $this::OEMBED_TYPE_JSON) !== false);
+			$typeXml = (mb_strpos($linkElement, $this::OEMBED_TYPE_XML) !== false);
 			if($typeJson || $typeXml)
 			{
 				if(preg_match('/href=[\'"](.+?)[\'"]/', $linkElement, $attributes))
 				{
 					$this->metadataType = ($typeJson ? 'json' : 'xml');
-					$this->metadataUrl = $attributes[1];
+					$this->metadataUrl = htmlspecialcharsback($attributes[1]);
 					return true;
 				}
 			}
@@ -166,5 +182,23 @@ class Oembed extends Parser
 		}
 
 		return false;
+	}
+
+	protected function getRawMetaData(HttpClient $httpClient)
+	{
+		$rawMetadata = $httpClient->get($this->metadataUrl);
+
+		return $rawMetadata;
+	}
+
+	protected function initHttpClient(): HttpClient
+	{
+		$httpClient = new HttpClient();
+		$httpClient->setTimeout(5);
+		$httpClient->setStreamTimeout(5);
+		$httpClient->setHeader('User-Agent', UrlPreview::USER_AGENT, true);
+		$httpClient->setPrivateIp(false);
+
+		return $httpClient;
 	}
 }

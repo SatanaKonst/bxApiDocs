@@ -35,6 +35,14 @@ abstract class Request
 			$this->setValuesNoDemand($filteredValues);
 	}
 
+	/**
+	 * @return Server
+	 */
+	public function getServer()
+	{
+		return $this->server;
+	}
+
 	public function getPhpSelf()
 	{
 		return $this->server->getPhpSelf();
@@ -54,7 +62,7 @@ abstract class Request
 			{
 				$page = IO\Path::normalize($page);
 
-				if (substr($page, 0, 1) !== "/" && !preg_match("#^[a-z]:[/\\\\]#i", $page))
+				if (mb_substr($page, 0, 1) !== "/" && !preg_match("#^[a-z]:[/\\\\]#i", $page))
 				{
 					$page = "/".$page;
 				}
@@ -65,12 +73,16 @@ abstract class Request
 		return $this->requestedPage;
 	}
 
+	/**
+	 * Retuns the current directory with a trailing slash (/).
+	 * @return string
+	 */
 	public function getRequestedPageDirectory()
 	{
 		if ($this->requestedPageDirectory === null)
 		{
 			$requestedPage = $this->getRequestedPage();
-			$this->requestedPageDirectory = IO\Path::getDirectory($requestedPage);
+			$this->requestedPageDirectory = IO\Path::getDirectory($requestedPage) . '/';
 		}
 		return $this->requestedPageDirectory;
 	}
@@ -78,8 +90,8 @@ abstract class Request
 	public function isAdminSection()
 	{
 		$requestedDir = $this->getRequestedPageDirectory();
-		return (substr($requestedDir, 0, strlen("/bitrix/admin/")) == "/bitrix/admin/"
-			|| substr($requestedDir, 0, strlen("/bitrix/updates/")) == "/bitrix/updates/"
+		return (mb_substr($requestedDir, 0, mb_strlen("/bitrix/admin/")) == "/bitrix/admin/"
+			|| mb_substr($requestedDir, 0, mb_strlen("/bitrix/updates/")) == "/bitrix/updates/"
 			|| (defined("ADMIN_SECTION") &&  ADMIN_SECTION == true)
 			|| (defined("BX_PUBLIC_TOOLS") && BX_PUBLIC_TOOLS === true)
 		);
@@ -89,17 +101,6 @@ abstract class Request
 	 * Returns true if current request is AJAX
 	 * @return bool
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает <i>true</i> если текущий запрос - AJAX.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return boolean 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/request/isajaxrequest.php
-	* @author Bitrix
-	*/
 	public function isAjaxRequest()
 	{
 		return

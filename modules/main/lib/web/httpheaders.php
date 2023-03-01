@@ -7,11 +7,16 @@
  */
 namespace Bitrix\Main\Web;
 
-class HttpHeaders
+use Bitrix\Main\Context;
+use Bitrix\Main\Text\Encoding;
+use IteratorAggregate;
+use Traversable;
+
+class HttpHeaders implements IteratorAggregate
 {
 	protected $headers = array();
 
-	static public function __construct()
+	public function __construct()
 	{
 	}
 
@@ -20,67 +25,46 @@ class HttpHeaders
 	 * @param string $name
 	 * @param string $value
 	 */
-	
-	/**
-	* <p>Нестатический метод добавляет заголовок.</p>
-	*
-	*
-	* @param string $name  
-	*
-	* @param string $value  
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/add.php
-	* @author Bitrix
-	*/
 	public function add($name, $value)
 	{
-		$name = str_replace(array("\r", "\n"), "", $name);
-		$value = str_replace(array("\r", "\n"), "", $value);
+		$name = $this->refineString($name);
+		$value = $this->refineString($value);
+
 		$nameLower = strtolower($name);
 
-		if(!isset($this->headers[$nameLower]))
+		if (!isset($this->headers[$nameLower]))
 		{
-			$this->headers[$nameLower] = array(
+			$this->headers[$nameLower] = [
 				"name" => $name,
-				"values" => array(),
-			);
+				"values" => [],
+			];
 		}
 		$this->headers[$nameLower]["values"][] = $value;
+	}
+
+	private function refineString($string)
+	{
+		return str_replace(["%0D", "%0A", "\r", "\n"], "", $string);
 	}
 
 	/**
 	 * Sets a header value.
 	 * @param string $name
-	 * @param string $value
+	 * @param string|null $value
 	 */
-	
-	/**
-	* <p>Нестатический метод устанавливает значение заголовка.</p>
-	*
-	*
-	* @param string $name  
-	*
-	* @param string $value  
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/set.php
-	* @author Bitrix
-	*/
 	public function set($name, $value)
 	{
-		$name = str_replace(array("\r", "\n"), "", $name);
-		$value = str_replace(array("\r", "\n"), "", $value);
+		$name = $this->refineString($name);
+		if ($value !== null)
+		{
+			$value = $this->refineString($value);
+		}
 		$nameLower = strtolower($name);
 
-		$this->headers[$nameLower] = array(
+		$this->headers[$nameLower] = [
 			"name" => $name,
-			"values" => array($value),
-		);
+			"values" => [$value],
+		];
 	}
 
 	/**
@@ -89,80 +73,63 @@ class HttpHeaders
 	 * @param bool $returnArray
 	 * @return null|string|array
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает заголовок по его имени.</p>
-	*
-	*
-	* @param string $name  Имя заголовка.
-	*
-	* @param boolean $returnArray = false Если <i>true</i>, то возвращает массив с несколькими значениями.
-	*
-	* @return mixed 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/get.php
-	* @author Bitrix
-	*/
 	public function get($name, $returnArray = false)
 	{
 		$nameLower = strtolower($name);
 
-		if(isset($this->headers[$nameLower]))
+		if (isset($this->headers[$nameLower]))
 		{
-			if($returnArray)
+			if ($returnArray)
 			{
 				return $this->headers[$nameLower]["values"];
 			}
+
 			return $this->headers[$nameLower]["values"][0];
 		}
+
 		return null;
+	}
+
+	/**
+	 * Deletes a header or headers by its name.
+	 *
+	 * @param string $name
+	 * @return void
+	 */
+	public function delete($name)
+	{
+		$nameLower = strtolower($name);
+
+		if (isset($this->headers[$nameLower]))
+		{
+			unset($this->headers[$nameLower]);
+		}
 	}
 
 	/**
 	 * Clears all headers.
 	 */
-	
-	/**
-	* <p>Нестатический метод очищает все заголовки.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/clear.php
-	* @author Bitrix
-	*/
 	public function clear()
 	{
-		$this->headers = array();
+		unset($this->headers);
+		$this->headers = [];
 	}
 
 	/**
 	 * Returns the string representation for a HTTP request.
 	 * @return string
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает строковое представление запроса HTTP.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return string 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/tostring.php
-	* @author Bitrix
-	*/
 	public function toString()
 	{
 		$str = "";
 		foreach($this->headers as $header)
 		{
-			foreach($header["values"] as $value)
+			foreach ($header["values"] as $value)
 			{
-				$str .= $header["name"].": ".$value."\r\n";
+				$str .= $header["name"] . ": " . $value . "\r\n";
 			}
 		}
+
 		return $str;
 	}
 
@@ -170,104 +137,86 @@ class HttpHeaders
 	 * Returns headers as a raw array.
 	 * @return array
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает заголовки в виде исходного массива.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return array 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/toarray.php
-	* @author Bitrix
-	*/
 	public function toArray()
 	{
 		return $this->headers;
 	}
 
 	/**
-	 * Returns the content type part of the Content-Type header.
+	 * Returns the content type part of the Content-Type header in lower case.
 	 * @return null|string
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает тип контента из <b>Content-Type</b> заголовка.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return mixed 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/getcontenttype.php
-	* @author Bitrix
-	*/
 	public function getContentType()
 	{
 		$contentType = $this->get("Content-Type");
-		if($contentType !== null)
+		if ($contentType !== null)
 		{
 			$parts = explode(";", $contentType);
-			return trim($parts[0]);
+
+			// RFC 2045 says: "The type, subtype, and parameter names are not case-sensitive."
+			return strtolower(trim($parts[0]));
 		}
+
 		return null;
+	}
+
+	/**
+	 * Returns the specified attribute part of the Content-Type header.
+	 * @return null|string
+	 */
+	public function getContentTypeAttribute(string $attribute)
+	{
+		$contentType = $this->get('Content-Type');
+		if ($contentType !== null)
+		{
+			$attribute = strtolower($attribute);
+			$parts = explode(';', $contentType);
+
+			foreach ($parts as $part)
+			{
+				$values = explode('=', $part);
+				if (strtolower(trim($values[0])) == $attribute)
+				{
+					return trim($values[1]);
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Returns the boundary value of the Content-Type header.
+	 * @return null|string
+	 */
+	public function getBoundary()
+	{
+		return $this->getContentTypeAttribute('boundary');
 	}
 
 	/**
 	 * Returns the charset part of the Content-Type header.
 	 * @return null|string
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает кодировку из <b>Content-Type</b> заголовка.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return mixed 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/getcharset.php
-	* @author Bitrix
-	*/
 	public function getCharset()
 	{
-		$contentType = $this->get("Content-Type");
-		if($contentType !== null)
-		{
-			$parts = explode(";", $contentType);
-			foreach($parts as $part)
-			{
-				$values = explode("=", $part);
-				if(strtolower(trim($values[0])) == "charset")
-				{
-					return trim($values[1]);
-				}
-			}
-		}
-		return null;
+		return $this->getContentTypeAttribute('charset');
 	}
 
 	/**
 	 * Returns disposition-type part of the Content-Disposition header
 	 * @return null|string Disposition-type part of the Content-Disposition header if found or null otherwise.
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает <b>disposition-type</b> из <b>Content-Disposition</b> заголовка.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return mixed 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/getcontentdisposition.php
-	* @author Bitrix
-	*/
 	public function getContentDisposition()
 	{
 		$contentDisposition = $this->get("Content-Disposition");
-		if($contentDisposition !== null)
+		if ($contentDisposition !== null)
 		{
 			$parts = explode(";", $contentDisposition);
+
 			return trim($parts[0]);
 		}
+
 		return null;
 	}
 
@@ -276,54 +225,73 @@ class HttpHeaders
 	 *
 	 * @return string|null Filename if it was found in the Content-disposition header or null otherwise.
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает имя файла из <b>Content-disposition</b> заголовка.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return mixed 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/web/httpheaders/getfilename.php
-	* @author Bitrix
-	*/
 	public function getFilename()
 	{
-		$contentDisposition = $this->get('Content-disposition');
-		if($contentDisposition !== null)
+		$contentDisposition = $this->get('Content-Disposition');
+		if ($contentDisposition !== null)
 		{
 			$filename = null;
 			$encoding = null;
 
 			$contentElements = explode(';', $contentDisposition);
-			foreach($contentElements as $contentElement)
+			foreach ($contentElements as $contentElement)
 			{
 				$contentElement = trim($contentElement);
-				if(preg_match('/^filename\*=(.+)\'(.+)?\'(.+)$/', $contentElement, $matches))
+				if (preg_match('/^filename\*=(.+)\'(.+)?\'(.+)$/', $contentElement, $matches))
 				{
 					$filename = $matches[3];
 					$encoding = $matches[1];
 					break;
 				}
-				elseif(preg_match('/^filename="(.+)"$/', $contentElement, $matches))
+				elseif (preg_match('/^filename="(.+)"$/', $contentElement, $matches))
 				{
-					$filename = $matches[3];
+					$filename = $matches[1];
+				}
+				elseif (preg_match('/^filename=(.+)$/', $contentElement, $matches))
+				{
+					$filename = $matches[1];
 				}
 			}
 
-			if($filename <> '')
+			if ($filename <> '')
 			{
 				$filename = urldecode($filename);
 
-				if($encoding <> '')
+				if ($encoding <> '')
 				{
-					$charset = \Bitrix\Main\Context::getCurrent()->getCulture()->getCharset();
-					$filename = \Bitrix\Main\Text\Encoding::convertEncoding($filename, $encoding, $charset);
+					$charset = Context::getCurrent()->getCulture()->getCharset();
+					$filename = Encoding::convertEncoding($filename, $encoding, $charset);
 				}
 			}
 
 			return $filename;
 		}
+
 		return null;
+	}
+
+	/**
+	 * Retrieve an external iterator
+	 * @link https://php.net/manual/en/iteratoraggregate.getiterator.php
+	 * @return Traversable An instance of an object implementing <b>Iterator</b> or
+	 * <b>Traversable</b>
+	 * @since 5.0.0
+	 */
+	public function getIterator(): Traversable
+	{
+		$toIterate = [];
+		foreach ($this->headers as $header)
+		{
+			if (count($header["values"]) > 1)
+			{
+				$toIterate[$header["name"]] = $header["values"];
+			}
+			else
+			{
+				$toIterate[$header["name"]] = $header["values"][0];
+			}
+		}
+
+		return new \ArrayIterator($toIterate);
 	}
 }

@@ -2,7 +2,7 @@
 namespace Bitrix\Main\Type;
 
 class Dictionary
-	implements \ArrayAccess, \Iterator, \Countable
+	implements \ArrayAccess, \Iterator, \Countable, \JsonSerializable
 {
 	/**
 	 * @var array
@@ -12,21 +12,8 @@ class Dictionary
 	/**
 	 * Creates object.
 	 *
-	 * @param array $values
+	 * @param array | null $values
 	 */
-	
-	/**
-	* <p>Нестатический метод вызывается при создании экземпляра класса и позволяет в нем произвести при создании объекта какие-то действия.</p>
-	*
-	*
-	* @param array $values = null 
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/__construct.php
-	* @author Bitrix
-	*/
 	public function __construct(array $values = null)
 	{
 		if($values !== null)
@@ -39,21 +26,8 @@ class Dictionary
 	 * Returns any variable by its name. Null if variable is not set.
 	 *
 	 * @param string $name
-	 * @return string | null
+	 * @return string | array | null
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает любую переменную по её имени. Возвращает <code>0</code>, если переменной не существует.</p>
-	*
-	*
-	* @param string $name  
-	*
-	* @return string 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/get.php
-	* @author Bitrix
-	*/
 	public function get($name)
 	{
 		// this condition a bit faster
@@ -66,7 +40,30 @@ class Dictionary
 		return null;
 	}
 
-	public function set(array $values)
+	public function set($name, $value = null)
+	{
+		if (is_array($name))
+		{
+			$this->values = $name;
+		}
+		else
+		{
+			$this->values[$name] = $value;
+		}
+	}
+
+	/**
+	 * @return array
+	 */
+	public function getValues()
+	{
+		return $this->values;
+	}
+
+	/**
+	 * @param $values
+	 */
+	public function setValues($values)
 	{
 		$this->values = $values;
 	}
@@ -79,17 +76,7 @@ class Dictionary
 	/**
 	 * Return the current element
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает текущий элемент.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/current.php
-	* @author Bitrix
-	*/
+	#[\ReturnTypeWillChange]
 	public function current()
 	{
 		return current($this->values);
@@ -98,36 +85,15 @@ class Dictionary
 	/**
 	 * Move forward to next element
 	 */
-	
-	/**
-	* <p>Нестатический метод. Переход вперёд к следующему элементу.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/next.php
-	* @author Bitrix
-	*/
-	public function next()
+	public function next(): void
 	{
-		return next($this->values);
+		next($this->values);
 	}
 
 	/**
 	 * Return the key of the current element
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает ключ текущего элемента.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/key.php
-	* @author Bitrix
-	*/
+	#[\ReturnTypeWillChange]
 	public function key()
 	{
 		return key($this->values);
@@ -136,18 +102,7 @@ class Dictionary
 	/**
 	 * Checks if current position is valid
 	 */
-	
-	/**
-	* <p>Нестатический метод проверяет валидность текущей позиции.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/valid.php
-	* @author Bitrix
-	*/
-	public function valid()
+	public function valid(): bool
 	{
 		return ($this->key() !== null);
 	}
@@ -155,37 +110,15 @@ class Dictionary
 	/**
 	 * Rewind the Iterator to the first element
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает итератор к первому элементу.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/rewind.php
-	* @author Bitrix
-	*/
-	public function rewind()
+	public function rewind(): void
 	{
-		return reset($this->values);
+		reset($this->values);
 	}
 
 	/**
 	 * Whether a offset exists
 	 */
-	
-	/**
-	* <p>Нестатический метод. Существует ли смещение.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/offsetexists.php
-	* @author Bitrix
-	*/
-	public function offsetExists($offset)
+	public function offsetExists($offset): bool
 	{
 		return isset($this->values[$offset]) || array_key_exists($offset, $this->values);
 	}
@@ -193,17 +126,7 @@ class Dictionary
 	/**
 	 * Offset to retrieve
 	 */
-	
-	/**
-	* <p>Нестатический метод. Установка по получению.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/offsetget.php
-	* @author Bitrix
-	*/
+	#[\ReturnTypeWillChange]
 	public function offsetGet($offset)
 	{
 		if (isset($this->values[$offset]) || array_key_exists($offset, $this->values))
@@ -217,17 +140,7 @@ class Dictionary
 	/**
 	 * Offset to set
 	 */
-	
-	/**
-	* <p>Нестатический метод. Установка по смещению.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/offsetset.php
-	* @author Bitrix
-	*/
+	#[\ReturnTypeWillChange]
 	public function offsetSet($offset, $value)
 	{
 		if($offset === null)
@@ -243,18 +156,7 @@ class Dictionary
 	/**
 	 * Offset to unset
 	 */
-	
-	/**
-	* <p>Нестатический метод. Очистка по смещению.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/offsetunset.php
-	* @author Bitrix
-	*/
-	public function offsetUnset($offset)
+	public function offsetUnset($offset): void
 	{
 		unset($this->values[$offset]);
 	}
@@ -262,18 +164,7 @@ class Dictionary
 	/**
 	 * Count elements of an object
 	 */
-	
-	/**
-	* <p>Нестатический метод подсчитывает число элементов объекта.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return public 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/count.php
-	* @author Bitrix
-	*/
-	public function count()
+	public function count(): int
 	{
 		return count($this->values);
 	}
@@ -283,17 +174,6 @@ class Dictionary
 	 *
 	 * @return array
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает значения как массив.</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return array 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/toarray.php
-	* @author Bitrix
-	*/
 	public function toArray()
 	{
 		return $this->values;
@@ -303,19 +183,18 @@ class Dictionary
 	 * Returns true if the dictionary is empty.
 	 * @return bool
 	 */
-	
-	/**
-	* <p>Нестатический метод возвращает <i>true</i> если словарь пустой</p> <p>Без параметров</p> <a name="example"></a>
-	*
-	*
-	* @return boolean 
-	*
-	* @static
-	* @link http://dev.1c-bitrix.ru/api_d7/bitrix/main/type/dictionary/isempty.php
-	* @author Bitrix
-	*/
 	public function isEmpty()
 	{
 		return empty($this->values);
 	}
+
+	/**
+	 * JsonSerializable::jsonSerialize � Specify data which should be serialized to JSON
+	 * @return array
+	 */
+	#[\ReturnTypeWillChange]
+	public function jsonSerialize()
+	{
+		return $this->values;
+    }
 }
